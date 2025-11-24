@@ -491,8 +491,6 @@ Contribuições são muito bem-vindas!
 
 <div align="center">
 
-**Desenvolvido com ❤️ para ajudar na gestão de investimentos**
-
 ⭐ **Se este projeto foi útil, considere dar uma estrela!** ⭐
 
 ---
