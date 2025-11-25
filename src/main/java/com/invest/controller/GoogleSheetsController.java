@@ -1,6 +1,5 @@
 package com.invest.controller;
 
-import com.invest.service.PythonScriptExecutor;
 import com.invest.service.external.GoogleSheetsService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,9 +33,6 @@ public class GoogleSheetsController {
     private GoogleSheetsService googleSheetsJsonService; // Correto: injetado
     
     @Autowired
-    private PythonScriptExecutor pythonScriptExecutor;
-    
-    @Autowired
     private CarteiraService carteiraService;
     
     @Autowired
@@ -46,9 +42,6 @@ public class GoogleSheetsController {
     @GetMapping("/preco/{codigoAtivo}")
     public ResponseEntity<String> buscarPrecoAtivo(@PathVariable String codigoAtivo) {
         try {
-            // Atualiza o JSON antes de buscar
-            pythonScriptExecutor.executarAtualizacaoCotacoes();
-            
             System.out.println("Buscando preço para: " + codigoAtivo);
             
             //  Chame na instância injetada, não na classe

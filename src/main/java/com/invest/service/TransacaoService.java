@@ -1,23 +1,19 @@
 package com.invest.service;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-
+import com.invest.dto.TransacaoRequest;
+import com.invest.model.*;
+import com.invest.repository.TransacaoRepository;
+import com.invest.repository.CarteiraRepository;
+import com.invest.repository.AtivoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.invest.dto.TransacaoRequest;
-import com.invest.model.Ativo;
-import com.invest.model.Carteira;
-import com.invest.model.TipoTransacao;
-import com.invest.model.Transacao;
-import com.invest.repository.AtivoRepository;
-import com.invest.repository.CarteiraRepository;
-import com.invest.repository.TransacaoRepository;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Service para lógica de negócio das transações
@@ -34,10 +30,6 @@ public class TransacaoService {
 
     @Autowired
     private AtivoRepository ativoRepository;
-
-    @Autowired
-    @Lazy
-    private CarteiraService carteiraService;
 
     /**
      * Cria uma nova transação
@@ -78,10 +70,6 @@ public class TransacaoService {
             atualizarPosicaoAtivo(ativo, transacao);
         }
 
-        // Recalcula o valor atual da carteira após criar a transação
-        carteiraService.calcularValorAtualCarteira(carteira);
-        carteiraRepository.save(carteira);
-
         return savedTransacao;
     }
 
@@ -113,11 +101,6 @@ public class TransacaoService {
         // Atualiza posição do ativo
         atualizarPosicaoAtivo(transacao.getAtivo(), transacao);
 
-        // Recalcula o valor atual da carteira após atualizar a transação
-        Carteira carteira = savedTransacao.getCarteira();
-        carteiraService.calcularValorAtualCarteira(carteira);
-        carteiraRepository.save(carteira);
-
         return savedTransacao;
     }
 
@@ -128,16 +111,10 @@ public class TransacaoService {
         Transacao transacao = transacaoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Transação não encontrada: " + id));
 
-        Carteira carteira = transacao.getCarteira();
-
         // Reverte posição do ativo
         reverterPosicaoAtivo(transacao);
 
         transacaoRepository.deleteById(id);
-
-        // Recalcula o valor atual da carteira após deletar a transação
-        carteiraService.calcularValorAtualCarteira(carteira);
-        carteiraRepository.save(carteira);
     }
 
     /**

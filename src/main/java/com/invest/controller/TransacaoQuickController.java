@@ -1,6 +1,7 @@
 package com.invest.controller;
 
 import com.invest.dto.TransacaoRequest;
+import com.invest.dto.TransacaoResponse;
 import com.invest.model.TipoAtivo;
 import com.invest.model.TipoTransacao;
 import com.invest.model.Transacao;
@@ -10,6 +11,7 @@ import com.invest.service.TransacaoService;
 import io.swagger.v3.oas.annotations.Operation;
 
 import com.invest.dto.CotacaoDTO;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

@@ -93,30 +93,21 @@ public class RentabilidadeService {
             RentabilidadeResponse ativoRentabilidade = calcularRentabilidadeAtivo(ativo.getId());
             ativosRentabilidade.add(ativoRentabilidade);
 
-            // Acumula valores (com verificação de null)
-            BigDecimal valorInvestido = ativoRentabilidade.getValorTotalInvestido() != null ? ativoRentabilidade.getValorTotalInvestido() : BigDecimal.ZERO;
-            BigDecimal valorMercado = ativoRentabilidade.getValorAtualMercado() != null ? ativoRentabilidade.getValorAtualMercado() : BigDecimal.ZERO;
-            BigDecimal valorComProventos = ativoRentabilidade.getValorAtualComProventos() != null ? ativoRentabilidade.getValorAtualComProventos() : BigDecimal.ZERO;
-            BigDecimal compras = ativoRentabilidade.getValorTotalCompras() != null ? ativoRentabilidade.getValorTotalCompras() : BigDecimal.ZERO;
-            BigDecimal vendas = ativoRentabilidade.getValorTotalVendas() != null ? ativoRentabilidade.getValorTotalVendas() : BigDecimal.ZERO;
-            BigDecimal proventos = ativoRentabilidade.getValorTotalProventos() != null ? ativoRentabilidade.getValorTotalProventos() : BigDecimal.ZERO;
-            BigDecimal taxas = ativoRentabilidade.getTotalTaxasCorretagem() != null ? ativoRentabilidade.getTotalTaxasCorretagem() : BigDecimal.ZERO;
-            BigDecimal impostos = ativoRentabilidade.getTotalImpostos() != null ? ativoRentabilidade.getTotalImpostos() : BigDecimal.ZERO;
-            
-            valorTotalInvestido = valorTotalInvestido.add(valorInvestido);
-            valorAtualMercado = valorAtualMercado.add(valorMercado);
-            valorAtualComProventos = valorAtualComProventos.add(valorComProventos);
-            totalCompras = totalCompras.add(compras);
-            totalVendas = totalVendas.add(vendas);
-            totalProventos = totalProventos.add(proventos);
-            totalTaxas = totalTaxas.add(taxas);
-            totalImpostos = totalImpostos.add(impostos);
+            // Acumula valores
+            valorTotalInvestido = valorTotalInvestido.add(ativoRentabilidade.getValorTotalInvestido());
+            valorAtualMercado = valorAtualMercado.add(ativoRentabilidade.getValorAtualMercado());
+            valorAtualComProventos = valorAtualComProventos.add(ativoRentabilidade.getValorAtualComProventos());
+            totalCompras = totalCompras.add(ativoRentabilidade.getValorTotalCompras());
+            totalVendas = totalVendas.add(ativoRentabilidade.getValorTotalVendas());
+            totalProventos = totalProventos.add(ativoRentabilidade.getValorTotalProventos());
+            totalTaxas = totalTaxas.add(ativoRentabilidade.getTotalTaxasCorretagem());
+            totalImpostos = totalImpostos.add(ativoRentabilidade.getTotalImpostos());
         }
 
         // Define valores da carteira
-        response.setValorTotalInvestido(valorTotalInvestido != null ? valorTotalInvestido : BigDecimal.ZERO);
-        response.setValorAtualMercado(valorAtualMercado != null ? valorAtualMercado : BigDecimal.ZERO);
-        response.setValorAtualComProventos(valorAtualComProventos != null ? valorAtualComProventos : BigDecimal.ZERO);
+        response.setValorTotalInvestido(valorTotalInvestido);
+        response.setValorAtualMercado(valorAtualMercado);
+        response.setValorAtualComProventos(valorAtualComProventos);
         response.setValorTotalCompras(totalCompras);
         response.setValorTotalVendas(totalVendas);
         response.setValorTotalProventos(totalProventos);
@@ -197,18 +188,17 @@ public class RentabilidadeService {
      * Calcula rentabilidade
      */
     private void calcularRentabilidade(RentabilidadeResponse response) {
-        BigDecimal valorInvestido = response.getValorTotalInvestido() != null ? response.getValorTotalInvestido() : BigDecimal.ZERO;
-        BigDecimal quantidade = response.getQuantidadeAtual() != null ? response.getQuantidadeAtual() : BigDecimal.ZERO;
+        BigDecimal valorInvestido = response.getValorTotalInvestido();
+        BigDecimal quantidade = response.getQuantidadeAtual();
         BigDecimal precoAtual = response.getPrecoAtual();
-        BigDecimal valorTotalProventos = response.getValorTotalProventos() != null ? response.getValorTotalProventos() : BigDecimal.ZERO;
 
-        if (quantidade != null && quantidade.compareTo(BigDecimal.ZERO) > 0 && precoAtual != null) {
+        if (quantidade.compareTo(BigDecimal.ZERO) > 0 && precoAtual != null) {
             // Valor atual de mercado
             BigDecimal valorMercado = quantidade.multiply(precoAtual);
             response.setValorAtualMercado(valorMercado);
 
             // Valor atual com proventos
-            BigDecimal valorComProventos = valorMercado.add(valorTotalProventos);
+            BigDecimal valorComProventos = valorMercado.add(response.getValorTotalProventos());
             response.setValorAtualComProventos(valorComProventos);
 
             // Rentabilidade bruta (sem custos)
@@ -216,12 +206,11 @@ public class RentabilidadeService {
             response.setRentabilidadeBruta(rentabilidadeBruta);
 
             // Rentabilidade líquida (com custos)
-            BigDecimal totalCustos = response.getTotalCustos() != null ? response.getTotalCustos() : BigDecimal.ZERO;
-            BigDecimal rentabilidadeLiquida = valorComProventos.subtract(valorInvestido).subtract(totalCustos);
+            BigDecimal rentabilidadeLiquida = valorComProventos.subtract(valorInvestido).subtract(response.getTotalCustos());
             response.setRentabilidadeLiquida(rentabilidadeLiquida);
 
             // Rentabilidade percentual bruta
-            if (valorInvestido != null && valorInvestido.compareTo(BigDecimal.ZERO) > 0) {
+            if (valorInvestido.compareTo(BigDecimal.ZERO) > 0) {
                 BigDecimal rentabilidadePercentualBruta = rentabilidadeBruta
                         .divide(valorInvestido, 4, RoundingMode.HALF_UP)
                         .multiply(BigDecimal.valueOf(100));
@@ -232,43 +221,20 @@ public class RentabilidadeService {
                         .divide(valorInvestido, 4, RoundingMode.HALF_UP)
                         .multiply(BigDecimal.valueOf(100));
                 response.setRentabilidadePercentualLiquida(rentabilidadePercentualLiquida);
-            } else {
-                response.setRentabilidadePercentualBruta(BigDecimal.ZERO);
-                response.setRentabilidadePercentualLiquida(BigDecimal.ZERO);
             }
 
             // Variação percentual (preço atual vs preço médio)
-            BigDecimal precoMedioCompra = response.getPrecoMedioCompra();
-            if (precoMedioCompra != null && precoMedioCompra.compareTo(BigDecimal.ZERO) > 0) {
+            if (response.getPrecoMedioCompra().compareTo(BigDecimal.ZERO) > 0) {
                 BigDecimal variacaoPercentual = precoAtual
-                        .subtract(precoMedioCompra)
-                        .divide(precoMedioCompra, 4, RoundingMode.HALF_UP)
+                        .subtract(response.getPrecoMedioCompra())
+                        .divide(response.getPrecoMedioCompra(), 4, RoundingMode.HALF_UP)
                         .multiply(BigDecimal.valueOf(100));
                 response.setVariacaoPercentual(variacaoPercentual);
-            } else {
-                response.setVariacaoPercentual(BigDecimal.ZERO);
             }
-        } else {
-            // Se não houver quantidade ou preço atual, define valores como zero
-            response.setValorAtualMercado(BigDecimal.ZERO);
-            response.setValorAtualComProventos(valorTotalProventos);
-            BigDecimal totalCustos = response.getTotalCustos() != null ? response.getTotalCustos() : BigDecimal.ZERO;
-            response.setRentabilidadeBruta(BigDecimal.ZERO.subtract(valorInvestido));
-            response.setRentabilidadeLiquida(valorTotalProventos.subtract(valorInvestido).subtract(totalCustos));
-            response.setRentabilidadePercentualBruta(BigDecimal.ZERO);
-            response.setRentabilidadePercentualLiquida(BigDecimal.ZERO);
-            response.setVariacaoPercentual(BigDecimal.ZERO);
-        }
-        
-        // Variação em valor (só se houver preço atual e quantidade)
-        BigDecimal precoAtualFinal = response.getPrecoAtual();
-        BigDecimal quantidadeFinal = response.getQuantidadeAtual();
-        BigDecimal precoMedioFinal = response.getPrecoMedioCompra();
-        if (precoAtualFinal != null && quantidadeFinal != null && precoMedioFinal != null) {
-            BigDecimal variacaoValor = precoAtualFinal.subtract(precoMedioFinal).multiply(quantidadeFinal);
+
+            // Variação em valor
+            BigDecimal variacaoValor = precoAtual.subtract(response.getPrecoMedioCompra()).multiply(quantidade);
             response.setVariacaoValor(variacaoValor);
-        } else {
-            response.setVariacaoValor(BigDecimal.ZERO);
         }
     }
 
@@ -277,16 +243,12 @@ public class RentabilidadeService {
      */
     private void calcularMetricasAdicionais(RentabilidadeResponse response, List<Transacao> transacoes) {
         // Dividend Yield
-        BigDecimal valorAtualMercado = response.getValorAtualMercado();
-        BigDecimal valorTotalProventos = response.getValorTotalProventos();
-        if (valorAtualMercado != null && valorAtualMercado.compareTo(BigDecimal.ZERO) > 0 && 
-            valorTotalProventos != null && valorTotalProventos.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal dividendYield = valorTotalProventos
-                    .divide(valorAtualMercado, 4, RoundingMode.HALF_UP)
+        if (response.getValorAtualMercado().compareTo(BigDecimal.ZERO) > 0 && 
+            response.getValorTotalProventos().compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal dividendYield = response.getValorTotalProventos()
+                    .divide(response.getValorAtualMercado(), 4, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100));
             response.setDividendYield(dividendYield);
-        } else {
-            response.setDividendYield(BigDecimal.ZERO);
         }
 
         // Preço teto e suporte (simplificado)
@@ -335,21 +297,20 @@ public class RentabilidadeService {
      * Calcula rentabilidade da carteira
      */
     private void calcularRentabilidadeCarteira(CarteiraRentabilidadeResponse response) {
-        BigDecimal valorInvestido = response.getValorTotalInvestido() != null ? response.getValorTotalInvestido() : BigDecimal.ZERO;
-        BigDecimal valorAtual = response.getValorAtualMercado() != null ? response.getValorAtualMercado() : BigDecimal.ZERO;
-        BigDecimal valorComProventos = response.getValorAtualComProventos() != null ? response.getValorAtualComProventos() : BigDecimal.ZERO;
-        BigDecimal totalCustos = response.getTotalCustos() != null ? response.getTotalCustos() : BigDecimal.ZERO;
+        BigDecimal valorInvestido = response.getValorTotalInvestido();
+        BigDecimal valorAtual = response.getValorAtualMercado();
+        BigDecimal valorComProventos = response.getValorAtualComProventos();
 
         // Rentabilidade bruta
         BigDecimal rentabilidadeBruta = valorAtual.subtract(valorInvestido);
         response.setRentabilidadeBruta(rentabilidadeBruta);
 
         // Rentabilidade líquida
-        BigDecimal rentabilidadeLiquida = valorComProventos.subtract(valorInvestido).subtract(totalCustos);
+        BigDecimal rentabilidadeLiquida = valorComProventos.subtract(valorInvestido).subtract(response.getTotalCustos());
         response.setRentabilidadeLiquida(rentabilidadeLiquida);
 
         // Rentabilidade percentual
-        if (valorInvestido != null && valorInvestido.compareTo(BigDecimal.ZERO) > 0) {
+        if (valorInvestido.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal rentabilidadePercentualBruta = rentabilidadeBruta
                     .divide(valorInvestido, 4, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100));
@@ -359,9 +320,6 @@ public class RentabilidadeService {
                     .divide(valorInvestido, 4, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100));
             response.setRentabilidadePercentualLiquida(rentabilidadePercentualLiquida);
-        } else {
-            response.setRentabilidadePercentualBruta(BigDecimal.ZERO);
-            response.setRentabilidadePercentualLiquida(BigDecimal.ZERO);
         }
     }
 
@@ -369,9 +327,9 @@ public class RentabilidadeService {
      * Calcula distribuição por tipo de ativo
      */
     private void calcularDistribuicaoPorTipo(CarteiraRentabilidadeResponse response, List<Ativo> ativos) {
-        BigDecimal valorTotal = response.getValorAtualMercado() != null ? response.getValorAtualMercado() : BigDecimal.ZERO;
+        BigDecimal valorTotal = response.getValorAtualMercado();
         
-        if (valorTotal != null && valorTotal.compareTo(BigDecimal.ZERO) > 0) {
+        if (valorTotal.compareTo(BigDecimal.ZERO) > 0) {
             // Ações
             BigDecimal valorAcoes = ativos.stream()
                     .filter(a -> a.getTipo() == TipoAtivo.ACAO)

@@ -3,8 +3,6 @@ package com.invest.service;
 import com.invest.model.Investidor;
 import com.invest.repository.InvestidorRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,20 +20,11 @@ public class InvestidorService {
     @Autowired
     private InvestidorRepository investidorRepository;
 
-    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
-
     /**
-     * Cria um novo investidor (com hash de senha)
+     * Cria um novo investidor
      */
     public Investidor createInvestidor(Investidor investidor) {
         investidor.setDataCriacao(LocalDateTime.now());
-        // Faz hash da senha antes de salvar (se ainda não estiver hasheada)
-        if (investidor.getSenha() != null && 
-            !investidor.getSenha().startsWith("$2a$") && 
-            !investidor.getSenha().startsWith("$2b$")) {
-            String senhaHash = passwordEncoder.encode(investidor.getSenha());
-            investidor.setSenha(senhaHash);
-        }
         return investidorRepository.save(investidor);
     }
 
@@ -62,20 +51,7 @@ public class InvestidorService {
         
         investidor.setNome(investidorAtualizado.getNome());
         investidor.setEmail(investidorAtualizado.getEmail());
-        
-        // Se a senha foi fornecida e não está hasheada, faz hash antes de salvar
-        if (investidorAtualizado.getSenha() != null) {
-            String senha = investidorAtualizado.getSenha();
-            // Verifica se a senha já está hasheada (começa com $2a$ ou $2b$)
-            if (!senha.startsWith("$2a$") && !senha.startsWith("$2b$")) {
-                String senhaHash = passwordEncoder.encode(senha);
-                investidor.setSenha(senhaHash);
-            } else {
-                // Se já está hasheada, mantém como está
-                investidor.setSenha(senha);
-            }
-        }
-        
+        investidor.setSenha(investidorAtualizado.getSenha());
         investidor.setDataAtualizacao(LocalDateTime.now());
         
         return investidorRepository.save(investidor);
@@ -90,12 +66,10 @@ public class InvestidorService {
     }
 
     /**
-     * Busca investidor por email (case-insensitive)
+     * Busca investidor por email
      */
     public Optional<Investidor> getInvestidorByEmail(String email) {
-        // Normaliza email e busca (case-insensitive se o repository suportar)
-        String emailNormalizado = email != null ? email.toLowerCase().trim() : "";
-        return investidorRepository.findByEmailIgnoreCase(emailNormalizado);
+        return investidorRepository.findByEmail(email);
     }
 
     /**

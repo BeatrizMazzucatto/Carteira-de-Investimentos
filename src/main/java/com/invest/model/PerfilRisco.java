@@ -5,7 +5,6 @@ package com.invest.model;
  */
 public enum PerfilRisco {
     BAIXO_RISCO("Baixo Risco"),
-    MODERADO_RISCO("Moderado Risco"),
     ALTO_RISCO("Alto Risco");
     
     private final String descricao;
@@ -46,11 +45,6 @@ public enum PerfilRisco {
                 if (normalized.contains("BAIXO") || normalized.contains("LOW") || 
                     normalized.contains("CONSERVADOR") || normalized.contains("CONSERVATIVE")) {
                     return BAIXO_RISCO;
-                }
-                if (normalized.contains("MODERADO") || normalized.contains("MODERATE") || 
-                    normalized.contains("RICO_MODERADO") || normalized.contains("RICO_MODERATE") ||
-                    normalized.contains("MODERADO_RISCO")) {
-                    return MODERADO_RISCO;
                 }
                 if (normalized.contains("ALTO") || normalized.contains("HIGH") || 
                     normalized.contains("ARROJADO") || normalized.contains("AGGRESSIVE")) {

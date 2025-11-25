@@ -1,15 +1,15 @@
 package com.invest.service;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
 import com.invest.dto.CotacaoDTO;
 import com.invest.service.external.GoogleSheetsService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.*;
 
 /**
  * Service responsável por streaming de cotações em tempo real
@@ -20,6 +20,9 @@ public class CotacaoStreamingService {
 
     @Autowired
     private GoogleSheetsService googleSheetsService;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
 
     private Map<String, CotacaoDTO> cotacoesCache = new HashMap<>();
 
@@ -93,8 +96,6 @@ public class CotacaoStreamingService {
      * Força atualização imediata das cotações
      */
     public void forcarAtualizacao() {
-        // Força recarregamento do cache do GoogleSheetsService
-        googleSheetsService.forcarRecarregamento();
         atualizarEEnviarCotacoes();
     }
 }

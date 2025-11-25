@@ -38,9 +38,6 @@ public class Investidor {
     @Column(name = "data_criacao", nullable = false)
     private LocalDateTime dataCriacao;
     
-    @Column(name = "data_atualizacao", nullable = true, insertable = true, updatable = true)
-    private LocalDateTime dataAtualizacao;
-    
     @OneToMany(mappedBy = "investidor", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Carteira> carteiras = new ArrayList<>();
     
@@ -97,14 +94,6 @@ public class Investidor {
         this.dataCriacao = dataCriacao;
     }
     
-    public LocalDateTime getDataAtualizacao() {
-        return dataAtualizacao;
-    }
-    
-    public void setDataAtualizacao(LocalDateTime dataAtualizacao) {
-        this.dataAtualizacao = dataAtualizacao;
-    }
-    
     public List<Carteira> getCarteiras() {
         return carteiras;
     }
@@ -121,5 +110,9 @@ public class Investidor {
     public void removerCarteira(Carteira carteira) {
         carteiras.remove(carteira);
         carteira.setInvestidor(null);
+    }
+
+    public void setDataAtualizacao(LocalDateTime now) {
+        throw new UnsupportedOperationException("Unimplemented method 'setDataAtualizacao'");
     }
 }

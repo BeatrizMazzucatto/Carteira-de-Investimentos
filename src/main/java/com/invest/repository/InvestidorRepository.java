@@ -15,12 +15,7 @@ import java.util.Optional;
 public interface InvestidorRepository extends JpaRepository<Investidor, Long> {
     
     /**
-     * Busca investidor por email (case-insensitive)
-     */
-    Optional<Investidor> findByEmailIgnoreCase(String email);
-    
-    /**
-     * Busca investidor por email (case-sensitive, mantido para compatibilidade)
+     * Busca investidor por email
      */
     Optional<Investidor> findByEmail(String email);
     

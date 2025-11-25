@@ -2,7 +2,6 @@ package com.invest.service.external;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.invest.service.PythonScriptExecutor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -29,15 +28,11 @@ public class GoogleSheetsService {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @Autowired
-    private PythonScriptExecutor pythonScriptExecutor;
-
     private static final String JSON_PATH = "classpath:data/cotacoes.json";
 
     // Cache simples (para evitar leitura frequente do disco)
     private Map<String, BigDecimal> cotacoesCache = null;
     private long lastModified = 0;
-    private boolean forceReload = false;
 
     /**
      * Busca o preço atual de um ativo pelo código (ex: PETR4, MGLU3)
@@ -50,9 +45,6 @@ public class GoogleSheetsService {
         }
 
         try {
-            // Atualiza o JSON antes de usar
-            pythonScriptExecutor.executarAtualizacaoCotacoes();
-            
             // Recarrega o cache se necessário
             recarregarCotacoesSeNecessario();
 
@@ -71,9 +63,6 @@ public class GoogleSheetsService {
      */
     public Map<String, BigDecimal> getAllCotacoes() {
         try {
-            // Atualiza o JSON antes de usar
-            pythonScriptExecutor.executarAtualizacaoCotacoes();
-            
             recarregarCotacoesSeNecessario();
             return new HashMap<>(cotacoesCache);
         } catch (Exception e) {
@@ -93,9 +82,6 @@ public class GoogleSheetsService {
         }
 
         try {
-            // Atualiza o JSON antes de usar
-            pythonScriptExecutor.executarAtualizacaoCotacoes();
-            
             Resource resource = resourceLoader.getResource(JSON_PATH);
             JsonNode rootNode = objectMapper.readTree(resource.getInputStream());
             String codigoUpper = codigoAtivo.toUpperCase().trim();
@@ -104,16 +90,6 @@ public class GoogleSheetsService {
                 String codigo = null;
                 if (ativo.has("Código")) {
                     codigo = ativo.get("Código").asText().trim().toUpperCase();
-                } else if (ativo.has("Ação")) {
-                    codigo = ativo.get("Ação").asText().trim().toUpperCase();
-                } else if (ativo.has("Acao")) {
-                    codigo = ativo.get("Acao").asText().trim().toUpperCase();
-                } else if (ativo.has("Codigo")) {
-                    codigo = ativo.get("Codigo").asText().trim().toUpperCase();
-                } else if (ativo.has("codigo")) {
-                    codigo = ativo.get("codigo").asText().trim().toUpperCase();
-                } else if (ativo.has("acao")) {
-                    codigo = ativo.get("acao").asText().trim().toUpperCase();
                 }
 
                 if (codigo != null && codigo.equals(codigoUpper)) {
@@ -121,28 +97,12 @@ public class GoogleSheetsService {
                     cotacaoMap.put("codigo", codigo);
 
                     // Preço
-                    String precoStr = null;
                     if (ativo.has("Preço")) {
-                        precoStr = ativo.get("Preço").asText().replace(",", ".").trim();
-                    } else if (ativo.has("Preço Atual")) {
-                        precoStr = ativo.get("Preço Atual").asText().replace(",", ".").trim();
-                    } else if (ativo.has("Preco Atual")) {
-                        precoStr = ativo.get("Preco Atual").asText().replace(",", ".").trim();
-                    } else if (ativo.has("PreÃ§o Atual")) {
-                        precoStr = ativo.get("PreÃ§o Atual").asText().replace(",", ".").trim();
-                    }
-                    
-                    if (precoStr != null && !precoStr.isEmpty()) {
+                        String precoStr = ativo.get("Preço").asText().replace(",", ".").trim();
                         try {
-                            // Trata valores sem vírgula/ponto (ex: "18010" -> "180.10")
-                            // Só aplica se o número tiver mais de 4 dígitos (valores pequenos como "100" são R$ 100,00)
-                            if (!precoStr.contains(".") && !precoStr.contains(",") && precoStr.length() > 4) {
-                                // Assume que os últimos 2 dígitos são centavos
-                                precoStr = precoStr.substring(0, precoStr.length() - 2) + "." + precoStr.substring(precoStr.length() - 2);
-                            }
                             cotacaoMap.put("precoAtual", new BigDecimal(precoStr).setScale(2, RoundingMode.HALF_UP));
                         } catch (NumberFormatException e) {
-                            System.err.println("Erro ao converter preço: " + precoStr);
+                            // Ignora se não conseguir converter
                         }
                     }
 
@@ -202,29 +162,12 @@ public class GoogleSheetsService {
      */
     private void recarregarCotacoesSeNecessario() throws IOException {
         Resource resource = resourceLoader.getResource(JSON_PATH);
-        long currentLastModified = 0;
-        
-        try {
-            currentLastModified = resource.lastModified();
-        } catch (Exception e) {
-            // Se lastModified não funcionar (arquivo em JAR), força recarregamento
-            currentLastModified = System.currentTimeMillis();
-        }
+        long currentLastModified = resource.lastModified(); // Só funciona se o recurso for um arquivo real
 
-        if (cotacoesCache == null || forceReload || currentLastModified > lastModified) {
+        if (cotacoesCache == null || currentLastModified > lastModified) {
             cotacoesCache = carregarCotacoes(resource);
             lastModified = currentLastModified;
-            forceReload = false;
         }
-    }
-    
-    /**
-     * Força recarregamento do cache na próxima leitura
-     */
-    public void forcarRecarregamento() {
-        forceReload = true;
-        cotacoesCache = null;
-        lastModified = 0;
     }
 
     /**
@@ -241,14 +184,8 @@ public class GoogleSheetsService {
                 codigo = ativo.get("Código").asText().trim();
             } else if (ativo.has("Ação")) {
                 codigo = ativo.get("Ação").asText().trim();
-            } else if (ativo.has("Acao")) {
-                codigo = ativo.get("Acao").asText().trim();
             } else if (ativo.has("Codigo")) {
                 codigo = ativo.get("Codigo").asText().trim();
-            } else if (ativo.has("codigo")) {
-                codigo = ativo.get("codigo").asText().trim();
-            } else if (ativo.has("acao")) {
-                codigo = ativo.get("acao").asText().trim();
             }
 
             // Tenta encontrar preço em diferentes campos possíveis
@@ -259,34 +196,15 @@ public class GoogleSheetsService {
                 precoStr = ativo.get("Preço Atual").asText().replace("R$", "").replace(",", ".").trim();
             } else if (ativo.has("Preco Atual")) {
                 precoStr = ativo.get("Preco Atual").asText().replace("R$", "").replace(",", ".").trim();
-            } else if (ativo.has("PreÃ§o Atual")) {
-                // Trata problema de encoding UTF-8
-                precoStr = ativo.get("PreÃ§o Atual").asText().replace("R$", "").replace(",", ".").trim();
-            } else if (ativo.has("preco")) {
-                precoStr = ativo.get("preco").asText().replace("R$", "").replace(",", ".").trim();
-            } else if (ativo.has("preco_atual")) {
-                precoStr = ativo.get("preco_atual").asText().replace("R$", "").replace(",", ".").trim();
             }
 
             if (codigo != null && precoStr != null && !precoStr.isEmpty()) {
                 try {
-                    // Trata valores sem vírgula/ponto (ex: "18010" -> "180.10")
-                    // Só aplica se o número tiver mais de 4 dígitos (valores pequenos como "100" são R$ 100,00)
-                    if (!precoStr.contains(".") && !precoStr.contains(",") && precoStr.length() > 4) {
-                        // Assume que os últimos 2 dígitos são centavos
-                        precoStr = precoStr.substring(0, precoStr.length() - 2) + "." + precoStr.substring(precoStr.length() - 2);
-                    }
                     BigDecimal preco = new BigDecimal(precoStr)
                             .setScale(2, RoundingMode.HALF_UP); // Arredonda para 2 casas
                     cotacoes.put(codigo.toUpperCase(), preco);
                 } catch (NumberFormatException e) {
                     System.err.println("Erro ao converter preço para '" + codigo + "': " + precoStr);
-                }
-            } else {
-                // Debug: mostra quais campos estão disponíveis no JSON
-                if (cotacoes.isEmpty()) { // Só mostra uma vez para não poluir o log
-                    System.out.println("⚠️ Campos disponíveis no JSON (primeiro registro):");
-                    ativo.fieldNames().forEachRemaining(field -> System.out.println("  - " + field));
                 }
             }
         }

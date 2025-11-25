@@ -3,7 +3,6 @@ package com.invest.service;
 import com.invest.dto.CarteiraRequest;
 import com.invest.model.*;
 import com.invest.repository.CarteiraRepository;
-import com.invest.repository.AtivoRepository;
 import com.invest.service.external.GoogleSheetsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,9 +27,6 @@ public class CarteiraService {
     
     @Autowired
     private GoogleSheetsService googleSheetsService;
-    
-    @Autowired
-    private AtivoRepository ativoRepository;
 
     /**
      * Cria uma nova carteira para um investidor por ID
@@ -110,18 +106,12 @@ public class CarteiraService {
     }
 
     /**
-     * Busca carteiras por investidor e recalcula o valor atual de cada uma
+     * Busca carteiras por investidor
      */
     public List<Carteira> getCarteirasByInvestidor(Long investidorId) {
         Investidor investidor = new Investidor();
         investidor.setId(investidorId);
-        List<Carteira> carteiras = carteiraRepository.findByInvestidor(investidor);
-        // Recalcula o valor atual de cada carteira para garantir que está atualizado
-        for (Carteira carteira : carteiras) {
-            calcularValorAtualCarteira(carteira);
-            carteiraRepository.save(carteira);
-        }
-        return carteiras;
+        return carteiraRepository.findByInvestidor(investidor);
     }
 
     /**
@@ -172,9 +162,6 @@ public class CarteiraService {
                 .orElseThrow(() -> new RuntimeException("Carteira não encontrada: " + carteiraId));
 
         try {
-            // Força recarregamento do cache de cotações para garantir dados atualizados
-            googleSheetsService.forcarRecarregamento();
-            
             // Atualiza o preço atual de cada ativo com base no JSON
             for (Ativo ativo : carteira.getAtivos()) {
                 String codigo = ativo.getCodigo();
@@ -216,21 +203,17 @@ public class CarteiraService {
 
     /**
      * Calcula o valor atual de uma carteira com base nos preços atuais dos ativos
-     * Se o ativo não tiver precoAtual, usa o precoCompra
      */
     public void calcularValorAtualCarteira(Carteira carteira) {
-        // Busca os ativos da carteira diretamente do banco para garantir dados atualizados
-        List<Ativo> ativos = ativoRepository.findByCarteira(carteira);
-        
         BigDecimal valorTotal = BigDecimal.ZERO;
         
-        // Itera sobre os ativos da carteira
-        for (Ativo ativo : ativos) {
-            if (ativo.getQuantidade() != null && ativo.getQuantidade().compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal valorAtivo = ativo.getValorTotalAtual(); // Usa precoAtual se disponível, senão precoCompra
-                if (valorAtivo != null && valorAtivo.compareTo(BigDecimal.ZERO) > 0) {
-                    valorTotal = valorTotal.add(valorAtivo);
-                }
+        for (Ativo ativo : carteira.getAtivos()) {
+            BigDecimal valorAtivo = ativo.getValorTotalAtual(); // Deve usar precoAtual * quantidade
+            if (valorAtivo != null) {
+                valorTotal = valorTotal.add(valorAtivo);
+            } else {
+                // Se não houver preço atual, usa o valor de compra (ou zero)
+                valorTotal = valorTotal.add(ativo.getValorTotalCompra());
             }
         }
         

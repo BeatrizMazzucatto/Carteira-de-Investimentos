@@ -1,49 +1,28 @@
 package com.invest.console;
 
-import java.io.Console;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Scanner;
-
+import com.invest.model.Investidor;
+import com.invest.model.Carteira;
+import com.invest.service.InvestidorService;
+import com.invest.service.CarteiraService;
+import com.invest.service.TransacaoService;
+import com.invest.service.RentabilidadeService;
+import com.invest.service.external.GoogleSheetsService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import com.invest.model.Carteira;
-import com.invest.model.Investidor;
-import com.invest.service.AuthService;
-import com.invest.service.CarteiraService;
-import com.invest.service.InvestidorService;
-import com.invest.service.RentabilidadeService;
-import com.invest.service.TransacaoService;
-import com.invest.service.external.GoogleSheetsService;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.Scanner;
 
 /**
  * Aplicação de Console para Sistema de Carteiras
  * Interface amigável para o cliente
- * 
- * Só executa quando app.console.enabled=true (padrão) ou quando não está em modo servidor
  */
 @Component
-@ConditionalOnProperty(name = "app.console.enabled", havingValue = "true", matchIfMissing = true)
 public class ConsoleApplication implements CommandLineRunner {
-
-    @Value("${app.mode:console}")
-    private String appMode;
 
     @Autowired
     private InvestidorService investidorService;
@@ -63,42 +42,11 @@ public class ConsoleApplication implements CommandLineRunner {
     @Autowired
     private com.invest.repository.AtivoRepository ativoRepository;
 
-    @Autowired
-    private com.invest.repository.TransacaoRepository transacaoRepository;
-
-    @Autowired
-    private AuthService authService;
-
-    @Autowired
-    private com.invest.service.InflacaoService inflacaoService;
-
-    @Autowired
-    private com.invest.service.RelatorioExibicaoService relatorioExibicaoService;
-
-    @Autowired
-    private com.invest.service.RelatorioEmpresaService relatorioEmpresaService;
-
-    @Autowired
-    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
-
-    @Autowired
-    private com.invest.service.PythonScriptExecutor pythonScriptExecutor;
-
     private Scanner scanner = new Scanner(System.in);
     private Investidor investidorLogado = null;
-    @SuppressWarnings("unused") // Token JWT armazenado para possível uso futuro em requisições autenticadas
-    private String jwtToken = null;
 
     @Override
     public void run(String... args) throws Exception {
-        // Só executa console se não estiver em modo servidor
-        if ("server".equalsIgnoreCase(appMode)) {
-            System.out.println("🚀 Modo servidor ativo - Console desabilitado");
-            System.out.println("📡 Servidor REST disponível em: http://localhost:8080");
-            System.out.println("🔌 WebSocket disponível em: ws://localhost:8080/ws-cotacoes");
-            return;
-        }
-        
         mostrarBanner();
         executarLogin();
     }
@@ -126,7 +74,7 @@ public class ConsoleApplication implements CommandLineRunner {
             System.out.println("Escolha uma opção:");
             System.out.println("1. Fazer Login");
             System.out.println("2. Criar Nova Conta");
-            System.out.println("0. Sair");
+            System.out.println("3. Sair");
             System.out.print("Opção: ");
 
             int opcao = lerInteiro();
@@ -139,7 +87,7 @@ public class ConsoleApplication implements CommandLineRunner {
                 case 2:
                     criarNovaConta();
                     break;
-                case 0:
+                case 3:
                     System.out.println("Obrigado por usar o Sistema de Carteiras!");
                     System.exit(0);
                     break;
@@ -152,7 +100,7 @@ public class ConsoleApplication implements CommandLineRunner {
     }
 
     /**
-     * Processo de login com autenticação JWT
+     * Processo de login
      */
     private void fazerLogin() {
         System.out.println("LOGIN");
@@ -161,145 +109,30 @@ public class ConsoleApplication implements CommandLineRunner {
         String email = scanner.nextLine().trim();
 
         System.out.print("Senha: ");
-        String senha = lerSenha();
+        String senha = scanner.nextLine().trim();
 
         try {
-            // Usa AuthService para autenticação com JWT
-            AuthService.AuthResult resultado = authService.authenticate(email, senha);
+            List<Investidor> investidores = investidorService.getAllInvestidores();
+            investidorLogado = investidores.stream()
+                    .filter(inv -> inv.getEmail().equalsIgnoreCase(email) && 
+                                 inv.getSenha().equals(senha))
+                    .findFirst()
+                    .orElse(null);
 
-            if (resultado.isSucesso()) {
-                investidorLogado = resultado.getInvestidor();
-                jwtToken = resultado.getToken();
+            if (investidorLogado != null) {
                 System.out.println();
-                System.out.println();
-                System.out.println("✅ Login realizado com sucesso!");
-                System.out.println();
+                System.out.println("Login realizado com sucesso!");
                 System.out.println("Bem-vindo(a), " + investidorLogado.getNome() + "!");
-                System.out.println();
                 System.out.println();
             } else {
                 System.out.println();
                 System.out.println("Email ou senha incorretos!");
+                System.out.println("Verifique os dados ou crie uma nova conta.");
                 System.out.println();
-                System.out.println();
-                System.out.println("Opções:");
-                System.out.println("1. Tentar novamente");
-                System.out.println("2. Esqueci a senha");
-                System.out.println("0. Voltar ao menu inicial");
-                System.out.print("Opção: ");
-                
-                int opcao = lerInteiro();
-                System.out.println();
-                
-                switch (opcao) {
-                    case 1:
-                        // Tenta novamente (recursivo)
-                        fazerLogin();
-                        break;
-                    case 2:
-                        // Esqueci a senha
-                        recuperarSenha(email);
-                        break;
-                    case 0:
-                        // Volta ao menu inicial
-                        return;
-                    default:
-                        System.out.println("Opção inválida!");
-                System.out.println();
-                }
             }
         } catch (Exception e) {
             System.out.println();
             System.out.println("Erro ao fazer login: " + e.getMessage());
-            System.out.println();
-        }
-    }
-
-    /**
-     * Recupera/redefine a senha do investidor
-     */
-    private void recuperarSenha(String email) {
-        System.out.println("RECUPERAÇÃO DE SENHA");
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println();
-        
-        // Se o email não foi fornecido, pede
-        if (email == null || email.isEmpty()) {
-            System.out.print("Digite o email da conta: ");
-            email = scanner.nextLine().trim();
-        }
-        
-        try {
-            // Verifica se o email existe
-            java.util.Optional<com.invest.model.Investidor> investidorOpt = 
-                investidorService.getInvestidorByEmail(email);
-            
-            if (investidorOpt.isEmpty()) {
-                System.out.println();
-                System.out.println("Email não encontrado no sistema!");
-                System.out.println("Verifique o email digitado ou crie uma nova conta.");
-                System.out.println();
-                System.out.println("Pressione Enter para continuar...");
-                scanner.nextLine();
-                System.out.println();
-                return;
-            }
-            
-            com.invest.model.Investidor investidor = investidorOpt.get();
-            
-            System.out.println();
-            System.out.println("Email encontrado: " + investidor.getEmail());
-            System.out.println("Nome: " + investidor.getNome());
-            System.out.println();
-            System.out.println("Você pode redefinir sua senha agora.");
-            System.out.println();
-            
-            System.out.print("Nova senha (mínimo 4 caracteres): ");
-            String novaSenha = lerSenha();
-            
-            if (novaSenha.isEmpty()) {
-                System.out.println("Senha não pode ser vazia!");
-                System.out.println();
-                return;
-            }
-            
-            if (novaSenha.length() < 4) {
-                System.out.println("Senha deve ter no mínimo 4 caracteres!");
-                System.out.println();
-                return;
-            }
-            
-            System.out.print("Confirme a nova senha: ");
-            String confirmacaoSenha = lerSenha();
-            
-            if (!novaSenha.equals(confirmacaoSenha)) {
-                System.out.println();
-                System.out.println("As senhas não coincidem! Tente novamente.");
-                System.out.println();
-                return;
-            }
-            
-            // Atualiza a senha
-            investidor.setSenha(novaSenha);
-            investidorService.updateInvestidor(investidor.getId(), investidor);
-            
-            System.out.println();
-            System.out.println();
-            System.out.println("✅ Senha redefinida com sucesso!");
-            System.out.println();
-            System.out.println("Agora você pode fazer login com a nova senha.");
-            System.out.println();
-            System.out.println();
-            System.out.println("Pressione Enter para continuar...");
-            scanner.nextLine();
-            System.out.println();
-            
-        } catch (Exception e) {
-            System.out.println();
-            System.out.println("Erro ao recuperar senha: " + e.getMessage());
-            System.out.println();
-            System.out.println("Pressione Enter para continuar...");
-            scanner.nextLine();
             System.out.println();
         }
     }
@@ -317,7 +150,7 @@ public class ConsoleApplication implements CommandLineRunner {
         String email = scanner.nextLine().trim();
 
         System.out.print("Senha (minimo 4 caracteres): ");
-        String senha = lerSenha();
+        String senha = scanner.nextLine().trim();
 
         if (nome.isEmpty() || email.isEmpty() || senha.isEmpty()) {
             System.out.println();
@@ -334,29 +167,12 @@ public class ConsoleApplication implements CommandLineRunner {
         }
 
         try {
-            // Verifica se o email já existe
-            if (investidorService.getInvestidorByEmail(email).isPresent()) {
-                System.out.println();
-                System.out.println("Email já cadastrado! Use outro email ou faça login.");
-                System.out.println();
-                return;
-            }
-
             Investidor novoInvestidor = new Investidor(nome, email, senha);
             investidorLogado = investidorService.createInvestidor(novoInvestidor);
-            
-            // Gera token JWT após criar a conta
-            AuthService.AuthResult resultado = authService.authenticate(email, senha);
-            if (resultado.isSucesso()) {
-                jwtToken = resultado.getToken();
-            }
 
             System.out.println();
-            System.out.println();
-            System.out.println("✅ Conta criada com sucesso!");
-            System.out.println();
+            System.out.println("Conta criada com sucesso!");
             System.out.println("Bem-vindo(a), " + investidorLogado.getNome() + "!");
-            System.out.println();
             System.out.println();
         } catch (Exception e) {
             System.out.println();
@@ -381,30 +197,15 @@ public class ConsoleApplication implements CommandLineRunner {
             System.out.println("1. Minhas Carteiras");
             System.out.println("2. Nova Carteira");
             System.out.println("3. Registrar Transação");
-            System.out.println("4. Relatório de Rentabilidade Total");
+            System.out.println("4. Relatórios de Rentabilidade");
             System.out.println("5. Consultar Ativos");
             System.out.println("6. Configurações");
-            System.out.println("0. Sair");
+            System.out.println("7. Sair");
             System.out.println();
             System.out.print("Opção: ");
 
             int opcao = lerInteiro();
             System.out.println();
-
-            // Atualiza cotações antes de executar qualquer opção (exceto sair)
-            if (opcao != 0 && opcao >= 1 && opcao <= 6) {
-                System.out.println("🔄 Atualizando cotações...");
-                try {
-                    boolean sucesso = pythonScriptExecutor.executarAtualizacaoCotacoes(true); // Modo silencioso
-                    if (sucesso) {
-                        System.out.println("✅ Cotações atualizadas!");
-                    }
-                } catch (Exception e) {
-                    // Se falhar a atualização, continua mesmo assim
-                    System.err.println("⚠️ Aviso: Não foi possível atualizar cotações automaticamente.");
-                }
-                System.out.println();
-            }
 
             switch (opcao) {
                 case 1:
@@ -425,8 +226,7 @@ public class ConsoleApplication implements CommandLineRunner {
                 case 6:
                     mostrarConfiguracoes();
                     break;
-                case 0:
-                    gerarRelatorioEmpresaAntesSair();
+                case 7:
                     System.out.println("Obrigado por usar o Sistema de Carteiras!");
                     System.exit(0);
                     break;
@@ -466,30 +266,6 @@ public class ConsoleApplication implements CommandLineRunner {
                 System.out.println("   Prazo: " + (carteira.getPrazo() != null ? carteira.getPrazo().getDescricao() : "N/A"));
                 System.out.println("   Risco: " + (carteira.getPerfilRisco() != null ? carteira.getPerfilRisco().getDescricao() : "N/A"));
                 System.out.println("   Valor Atual: R$ " + formatarValor(carteira.getValorAtual()));
-                
-                // Busca e exibe os ativos (ações) da carteira
-                try {
-                    List<com.invest.model.Ativo> ativos = ativoRepository.findByCarteira(carteira);
-                    if (ativos != null && !ativos.isEmpty()) {
-                        System.out.print("   Ações: ");
-                        List<String> codigos = new ArrayList<>();
-                        for (com.invest.model.Ativo ativo : ativos) {
-                            if (ativo.getQuantidade() != null && ativo.getQuantidade().compareTo(BigDecimal.ZERO) > 0) {
-                                codigos.add(ativo.getCodigo());
-                            }
-                        }
-                        if (!codigos.isEmpty()) {
-                            System.out.println(String.join(", ", codigos));
-                        } else {
-                            System.out.println("Nenhuma ação");
-                        }
-                    } else {
-                        System.out.println("   Ações: Nenhuma ação");
-                    }
-                } catch (Exception e) {
-                    System.out.println("   Ações: Erro ao carregar");
-                }
-                
                 System.out.println("   Criada em: " + formatarData(carteira.getDataCriacao()));
                 System.out.println();
             }
@@ -540,15 +316,9 @@ public class ConsoleApplication implements CommandLineRunner {
             System.out.println("Objetivo: " + (carteira.getObjetivo() != null ? carteira.getObjetivo().getDescricao() : "N/A"));
             System.out.println("Prazo: " + (carteira.getPrazo() != null ? carteira.getPrazo().getDescricao() : "N/A"));
             System.out.println("Perfil de Risco: " + (carteira.getPerfilRisco() != null ? carteira.getPerfilRisco().getDescricao() : "N/A"));
-            System.out.println();
-            System.out.println("Valor da Carteira: R$ " + formatarValor(carteira.getValorInicial()));
+            System.out.println("Valor Inicial: R$ " + formatarValor(carteira.getValorInicial()));
             System.out.println("Valor Atual: R$ " + formatarValor(carteira.getValorAtual()));
-            System.out.println();
             System.out.println("Criada em: " + formatarData(carteira.getDataCriacao()));
-            if (carteira.getDataAtualizacao() != null) {
-                System.out.println("Modificada em: " + formatarData(carteira.getDataAtualizacao()));
-            }
-            System.out.println();
             System.out.println();
 
             System.out.println("Escolha uma opção:");
@@ -557,9 +327,7 @@ public class ConsoleApplication implements CommandLineRunner {
             System.out.println("3. Ver Transações");
             System.out.println("4. Ver Ativos com Rentabilidade");
             System.out.println("5. Editar Carteira");
-            System.out.println("6. Histórico da Carteira");
-            System.out.println("7. Análise de Inflação e Valores Deflacionados");
-            System.out.println("0. Voltar");
+            System.out.println("6. Voltar");
             System.out.println();
             System.out.print("Opção: ");
 
@@ -583,12 +351,6 @@ public class ConsoleApplication implements CommandLineRunner {
                     editarCarteira(carteira);
                     break;
                 case 6:
-                    mostrarHistoricoCarteira(carteira);
-                    break;
-                case 7:
-                    mostrarAnaliseInflacao(carteira);
-                    break;
-                case 0:
                     return;
                 default:
                     System.out.println("Opção inválida! Tente novamente.");
@@ -604,39 +366,20 @@ public class ConsoleApplication implements CommandLineRunner {
         System.out.println("NOVA CARTEIRA");
         System.out.println("═══════════════");
         System.out.println();
-        System.out.println("(Digite '0' ou 'cancelar' a qualquer momento para voltar)");
-        System.out.println();
 
-        System.out.print("Nome da carteira (ou 0 para cancelar): ");
+        System.out.print("Nome da carteira: ");
         String nome = scanner.nextLine().trim();
-        if (nome.equalsIgnoreCase("0") || nome.equalsIgnoreCase("cancelar")) {
-            System.out.println("Criação de carteira cancelada.");
-            System.out.println();
-            return;
-        }
 
-        System.out.print("Descrição (opcional, ou 0 para cancelar): ");
+        System.out.print("Descrição (opcional): ");
         String descricao = scanner.nextLine().trim();
-        if (descricao.equalsIgnoreCase("0") || descricao.equalsIgnoreCase("cancelar")) {
-            System.out.println("Criação de carteira cancelada.");
-            System.out.println();
-            return;
-        }
 
         System.out.println();
         System.out.println("Escolha o perfil de risco:");
         System.out.println("1. Baixo Risco");
-        System.out.println("2. Moderado Risco");
-        System.out.println("3. Alto Risco");
-        System.out.println("0. Cancelar");
+        System.out.println("2. Alto Risco");
         System.out.print("Opção: ");
 
         int riscoOpcao = lerInteiro();
-        if (riscoOpcao == 0) {
-            System.out.println("Criação de carteira cancelada.");
-            System.out.println();
-            return;
-        }
         com.invest.model.PerfilRisco perfilRisco = obterPerfilRisco(riscoOpcao);
 
         System.out.println();
@@ -649,15 +392,9 @@ public class ConsoleApplication implements CommandLineRunner {
         System.out.println("6. Casa Própria");
         System.out.println("7. Viagem");
         System.out.println("8. Outros");
-        System.out.println("0. Cancelar");
         System.out.print("Opção: ");
 
         int objetivoOpcao = lerInteiro();
-        if (objetivoOpcao == 0) {
-            System.out.println("Criação de carteira cancelada.");
-            System.out.println();
-            return;
-        }
         com.invest.model.ObjetivoCarteira objetivo = obterObjetivoCarteira(objetivoOpcao);
 
         System.out.println();
@@ -665,33 +402,13 @@ public class ConsoleApplication implements CommandLineRunner {
         System.out.println("1. Curto Prazo");
         System.out.println("2. Medio Prazo");
         System.out.println("3. Longo Prazo");
-        System.out.println("0. Cancelar");
         System.out.print("Opção: ");
 
         int prazoOpcao = lerInteiro();
-        if (prazoOpcao == 0) {
-            System.out.println("Criação de carteira cancelada.");
-            System.out.println();
-            return;
-        }
         com.invest.model.PrazoCarteira prazo = obterPrazoCarteira(prazoOpcao);
 
-        System.out.print("Valor da carteira (R$, opcional, ou 0 para cancelar): ");
-        String valorInicialStr = scanner.nextLine().trim();
-        if (valorInicialStr.equalsIgnoreCase("cancelar")) {
-            System.out.println("Criação de carteira cancelada.");
-            System.out.println();
-            return;
-        }
-        BigDecimal valorInicial = null;
-        if (!valorInicialStr.isEmpty() && !valorInicialStr.equalsIgnoreCase("0")) {
-            try {
-                valorInicial = new BigDecimal(valorInicialStr.replace(",", "."));
-            } catch (NumberFormatException e) {
-                System.out.println("Valor inválido. Usando valor zero para a carteira.");
-                valorInicial = BigDecimal.ZERO;
-            }
-        }
+        System.out.print("Valor inicial (R$, opcional): ");
+        BigDecimal valorInicial = lerDecimal();
 
         try {
             com.invest.dto.CarteiraRequest request = new com.invest.dto.CarteiraRequest();
@@ -739,13 +456,9 @@ public class ConsoleApplication implements CommandLineRunner {
             for (int i = 0; i < carteiras.size(); i++) {
                 System.out.println((i + 1) + ". " + carteiras.get(i).getNome());
             }
-            System.out.println("0. Voltar");
             System.out.print("Opção: ");
 
             int carteiraOpcao = lerInteiro();
-            if (carteiraOpcao == 0) {
-                return;
-            }
             if (carteiraOpcao < 1 || carteiraOpcao > carteiras.size()) {
                 System.out.println("Carteira inválida!");
                 return;
@@ -771,13 +484,10 @@ public class ConsoleApplication implements CommandLineRunner {
         System.out.println("Tipo de transação:");
         System.out.println("1. Compra");
         System.out.println("2. Venda");
-        System.out.println("0. Voltar");
+        System.out.println("3. Provento/Dividendo");
         System.out.print("Opção: ");
 
         int tipoOpcao = lerInteiro();
-        if (tipoOpcao == 0) {
-            return;
-        }
         com.invest.model.TipoTransacao tipoTransacao = obterTipoTransacao(tipoOpcao);
 
         // Se for compra, mostra lista de ações disponíveis do JSON
@@ -786,192 +496,11 @@ public class ConsoleApplication implements CommandLineRunner {
             return;
         }
 
-        // Se for venda, mostra lista de ações que o usuário possui
-        if (tipoTransacao == com.invest.model.TipoTransacao.VENDA) {
-            mostrarListaAcoesEVender(carteira);
-            return;
-        }
-
-        // Para outros tipos de transação, mostra tabela de ações disponíveis
-        System.out.println();
-        System.out.println("AÇÕES DISPONÍVEIS");
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println();
-
-        try {
-            Map<String, BigDecimal> cotacoes = googleSheetsService.getAllCotacoes();
-
-            if (cotacoes.isEmpty()) {
-                System.out.println("Nenhuma cotação disponível no momento.");
-                System.out.println();
-            } else {
-                // Ordenar por código
-                List<String> codigos = new ArrayList<>(cotacoes.keySet());
-                Collections.sort(codigos);
-
-                System.out.println("┌─────┬──────────────┬──────────────────────┐");
-                System.out.println("│ Op  │ Código       │ Preço               │");
-                System.out.println("├─────┼──────────────┼──────────────────────┤");
-
-                int index = 1;
-                Map<Integer, String> mapaOpcoes = new HashMap<>();
-                for (String codigo : codigos) {
-                    BigDecimal preco = cotacoes.get(codigo);
-                    mapaOpcoes.put(index, codigo);
-                    System.out.printf("│ %-3d │ %-12s │ R$ %-17s │\n", index, codigo, formatarValor(preco));
-                    index++;
-                }
-                System.out.println("└─────┴──────────────┴──────────────────────┘");
-                System.out.println();
-
-                System.out.println("Escolha a ação (0 para digitar manualmente):");
-                System.out.print("Opção: ");
-                int opcao = lerInteiro();
-
-                String codigoAtivo;
-                String nomeAtivo;
-                BigDecimal precoAtual = null;
-
-                if (opcao == 0) {
-                    // Permite digitar manualmente
-                    System.out.print("Código do ativo (ex: PETR4) ou 0 para voltar: ");
-                    codigoAtivo = scanner.nextLine().trim().toUpperCase();
-                    if (codigoAtivo.equals("0")) {
-                        return;
-                    }
-                    System.out.print("Nome do ativo (ex: Petrobras) ou 0 para voltar: ");
-                    nomeAtivo = scanner.nextLine().trim();
-                    if (nomeAtivo.equals("0")) {
-                        return;
-                    }
-                } else {
-                    if (!mapaOpcoes.containsKey(opcao)) {
-                        System.out.println("Opção inválida!");
-                        System.out.println();
-                        return;
-                    }
-                    codigoAtivo = mapaOpcoes.get(opcao);
-                    nomeAtivo = codigoAtivo;
-                    precoAtual = cotacoes.get(codigoAtivo);
-                    System.out.println();
-                    System.out.println("Ação selecionada: " + codigoAtivo);
-                    if (precoAtual != null) {
-                        System.out.println("Preço atual: R$ " + formatarValor(precoAtual));
-                    }
-                    System.out.println();
-                }
-
-                // Continua com o restante do processo de registro
-                System.out.println("Tipo do ativo:");
-                System.out.println("1. Ação");
-                System.out.println("2. FII");
-                System.out.println("3. ETF");
-                System.out.println("4. CDB");
-                System.out.println("5. LCI/LCA");
-                System.out.println("6. Tesouro");
-                System.out.println("7. Criptomoeda");
-                System.out.print("Opção: ");
-                int tipoAtivoOpcao = lerInteiro();
-                com.invest.model.TipoAtivo tipoAtivo = obterTipoAtivo(tipoAtivoOpcao);
-
-                System.out.print("Quantidade (ou 0 para voltar): ");
-                BigDecimal quantidade = lerDecimal();
-                if (quantidade.compareTo(BigDecimal.ZERO) <= 0) {
-                    if (quantidade.compareTo(BigDecimal.ZERO) == 0) {
-                        return;
-                    } else {
-                        System.out.println("Quantidade deve ser positiva!");
-                        return;
-                    }
-                }
-
-                BigDecimal precoUnitario;
-                if (precoAtual != null) {
-                    System.out.print("Preço unitário (R$) [Enter para usar preço atual: R$ " + formatarValor(precoAtual) + "]: ");
-                    String precoInput = scanner.nextLine().trim();
-                    if (precoInput.isEmpty()) {
-                        precoUnitario = precoAtual;
-                    } else {
-                        try {
-                            precoUnitario = new BigDecimal(precoInput.replace(",", "."));
-                        } catch (NumberFormatException e) {
-                            System.out.println("Preço inválido! Usando preço atual.");
-                            precoUnitario = precoAtual;
-                        }
-                    }
-                } else {
-                    System.out.print("Preço unitário (R$) ou 0 para voltar: ");
-                    precoUnitario = lerDecimal();
-                    if (precoUnitario.compareTo(BigDecimal.ZERO) <= 0) {
-                        if (precoUnitario.compareTo(BigDecimal.ZERO) == 0) {
-                            return;
-                        } else {
-                            System.out.println("Preço deve ser positivo!");
-                            return;
-                        }
-                    }
-                }
-
-                System.out.print("Taxas de corretagem (R$) [Enter para 0]: ");
-                String taxasInput = scanner.nextLine().trim();
-                BigDecimal taxas = BigDecimal.ZERO;
-                if (!taxasInput.isEmpty()) {
-                    try {
-                        taxas = new BigDecimal(taxasInput.replace(",", "."));
-                    } catch (NumberFormatException e) {
-                        System.out.println("Taxa inválida! Usando R$ 0,00.");
-                    }
-                }
-
-                System.out.print("Impostos (R$) [Enter para 0]: ");
-                String impostosInput = scanner.nextLine().trim();
-                BigDecimal impostos = BigDecimal.ZERO;
-                if (!impostosInput.isEmpty()) {
-                    try {
-                        impostos = new BigDecimal(impostosInput.replace(",", "."));
-                    } catch (NumberFormatException e) {
-                        System.out.println("Imposto inválido! Usando R$ 0,00.");
-                    }
-                }
-
-                System.out.print("Observações (opcional): ");
-                String observacoes = scanner.nextLine().trim();
-
-                com.invest.dto.TransacaoRequest request = new com.invest.dto.TransacaoRequest();
-                request.setTipoTransacao(tipoTransacao);
-                request.setCodigoAtivo(codigoAtivo);
-                request.setNomeAtivo(nomeAtivo);
-                request.setTipoAtivo(tipoAtivo);
-                request.setQuantidade(quantidade);
-                request.setPrecoUnitario(precoUnitario);
-                request.setTaxasCorretagem(taxas);
-                request.setImpostos(impostos);
-                request.setObservacoes(observacoes);
-
-                com.invest.model.Transacao transacao = transacaoService.createTransacao(carteira.getId(), request);
-
-                System.out.println();
-                System.out.println("Transação registrada com sucesso!");
-                System.out.println("Valor total: R$ " + formatarValor(transacao.getValorTotal()));
-                System.out.println("Valor líquido: R$ " + formatarValor(transacao.getValorLiquido()));
-                System.out.println();
-            }
-        } catch (Exception e) {
-            System.out.println();
-            System.out.println("Erro ao buscar cotações: " + e.getMessage());
-            System.out.println();
-            // Se houver erro, permite digitar manualmente
-            System.out.print("Código do ativo (ex: PETR4) ou 0 para voltar: ");
+        System.out.print("Código do ativo (ex: PETR4): ");
         String codigoAtivo = scanner.nextLine().trim().toUpperCase();
-            if (codigoAtivo.equals("0")) {
-                return;
-            }
 
-            System.out.print("Nome do ativo (ex: Petrobras) ou 0 para voltar: ");
+        System.out.print("Nome do ativo (ex: Petrobras): ");
         String nomeAtivo = scanner.nextLine().trim();
-            if (nomeAtivo.equals("0")) {
-                return;
-            }
 
         System.out.println();
         System.out.println("Tipo do ativo:");
@@ -982,43 +511,19 @@ public class ConsoleApplication implements CommandLineRunner {
         System.out.println("5. LCI/LCA");
         System.out.println("6. Tesouro");
         System.out.println("7. Criptomoeda");
-            System.out.println("0. Voltar");
         System.out.print("Opção: ");
 
         int ativoOpcao = lerInteiro();
-            if (ativoOpcao == 0) {
-                return;
-            }
         com.invest.model.TipoAtivo tipoAtivo = obterTipoAtivo(ativoOpcao);
 
-            System.out.print("Quantidade (ou 0 para voltar): ");
+        System.out.print("Quantidade: ");
         BigDecimal quantidade = lerDecimal();
-            if (quantidade.compareTo(BigDecimal.ZERO) <= 0) {
-                if (quantidade.compareTo(BigDecimal.ZERO) == 0) {
-                    System.out.println("Operação cancelada.");
-                    return;
-                } else {
-                    System.out.println("Quantidade deve ser positiva!");
-                    return;
-                }
-            }
 
-            System.out.print("Preço unitário (R$) ou 0 para voltar: ");
+        System.out.print("Preço unitário (R$): ");
         BigDecimal precoUnitario = lerDecimal();
-            if (precoUnitario.compareTo(BigDecimal.ZERO) <= 0) {
-                if (precoUnitario.compareTo(BigDecimal.ZERO) == 0) {
-                    System.out.println("Operação cancelada.");
-                    return;
-                } else {
-                    System.out.println("Preço deve ser positivo!");
-                    return;
-                }
-            }
 
-        // Calcula taxas automaticamente (0,5% do valor total da transação)
-        BigDecimal valorTotal = quantidade.multiply(precoUnitario);
-        BigDecimal taxas = calcularTaxasCorretagem(valorTotal);
-        System.out.println("Taxas/corretagem calculadas automaticamente: R$ " + formatarValor(taxas));
+        System.out.print("Taxas/corretagem (R$, opcional): ");
+        BigDecimal taxas = lerDecimal();
 
         System.out.print("Observações (opcional): ");
         String observacoes = scanner.nextLine().trim();
@@ -1042,11 +547,10 @@ public class ConsoleApplication implements CommandLineRunner {
             System.out.println("Valor líquido: R$ " + formatarValor(transacao.getValorLiquido()));
             System.out.println();
 
-            } catch (Exception ex) {
+        } catch (Exception e) {
             System.out.println();
-                System.out.println("Erro ao registrar transação: " + ex.getMessage());
+            System.out.println("Erro ao registrar transação: " + e.getMessage());
             System.out.println();
-            }
         }
     }
 
@@ -1054,9 +558,6 @@ public class ConsoleApplication implements CommandLineRunner {
      * Mostra lista de ações disponíveis e permite comprar
      */
     private void mostrarListaAcoesEComprar(Carteira carteira) {
-        // Recarrega a carteira do banco para garantir dados atualizados
-        carteira = carteiraService.getCarteiraById(carteira.getId());
-        
         System.out.println();
         System.out.println("AÇÕES DISPONÍVEIS PARA COMPRA");
         System.out.println("═══════════════════════════════════════════════════════════════");
@@ -1115,41 +616,20 @@ public class ConsoleApplication implements CommandLineRunner {
             System.out.println("Escolha o tipo de compra:");
             System.out.println("1. Comprar por quantidade de ações");
             System.out.println("2. Comprar por valor total (R$)");
-            System.out.println("0. Voltar");
             System.out.print("Opção: ");
 
             int tipoCompraOpcao = lerInteiro();
-            if (tipoCompraOpcao == 0) {
-                return;
-            }
-            
             BigDecimal quantidade;
             BigDecimal precoUnitario = precoAtual;
 
             if (tipoCompraOpcao == 1) {
                 // Compra por quantidade
-                System.out.print("Quantidade de ações (ou 0 para voltar): ");
+                System.out.print("Quantidade de ações: ");
                 quantidade = lerDecimal();
-                if (quantidade.compareTo(BigDecimal.ZERO) <= 0) {
-                    if (quantidade.compareTo(BigDecimal.ZERO) == 0) {
-                        return;
-                    } else {
-                        System.out.println("Quantidade deve ser positiva!");
-                        return;
-                    }
-                }
             } else if (tipoCompraOpcao == 2) {
                 // Compra por valor total
-                System.out.print("Valor total a investir (R$) ou 0 para voltar: ");
+                System.out.print("Valor total a investir (R$): ");
                 BigDecimal valorTotal = lerDecimal();
-                if (valorTotal.compareTo(BigDecimal.ZERO) <= 0) {
-                    if (valorTotal.compareTo(BigDecimal.ZERO) == 0) {
-                        return;
-                    } else {
-                        System.out.println("Valor deve ser positivo!");
-                        return;
-                    }
-                }
                 quantidade = valorTotal.divide(precoAtual, 4, java.math.RoundingMode.HALF_UP);
                 System.out.println("Quantidade calculada: " + formatarQuantidade(quantidade));
             } else {
@@ -1157,186 +637,31 @@ public class ConsoleApplication implements CommandLineRunner {
                 return;
             }
 
-            // Calcula taxas automaticamente (0,5% do valor total da transação)
-            BigDecimal valorTotal = quantidade.multiply(precoAtual);
-            BigDecimal taxas = calcularTaxasCorretagem(valorTotal);
-            BigDecimal valorLiquido = valorTotal.add(taxas);
-
-            // Recalcula valor disponível na carteira (recarrega do banco para garantir dados atualizados)
-            carteira = carteiraService.getCarteiraById(carteira.getId());
-            BigDecimal valorInicial = carteira.getValorInicial() != null ? carteira.getValorInicial() : BigDecimal.ZERO;
-            BigDecimal valorTotalCompras = transacaoRepository.calcularValorTotalCompras(carteira);
-            BigDecimal valorTotalTaxas = transacaoRepository.findByCarteira(carteira).stream()
-                    .filter(t -> t.getTipoTransacao() == com.invest.model.TipoTransacao.COMPRA)
-                    .map(t -> t.getTaxasCorretagem() != null ? t.getTaxasCorretagem() : BigDecimal.ZERO)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal valorInvestido = valorTotalCompras.add(valorTotalTaxas);
-            BigDecimal valorDisponivel = valorInicial.subtract(valorInvestido);
-
-            // Valida se há saldo suficiente
-            if (valorDisponivel.compareTo(valorLiquido) < 0) {
-                System.out.println();
-                System.out.println("⚠️ SALDO INSUFICIENTE!");
-                System.out.println("═══════════════════════════════════════════════════════════════");
-                System.out.println();
-                System.out.println("Valor disponível na carteira: R$ " + formatarValor(valorDisponivel));
-                System.out.println("Valor necessário para esta compra: R$ " + formatarValor(valorLiquido));
-                System.out.println("Valor em falta: R$ " + formatarValor(valorLiquido.subtract(valorDisponivel)));
-                System.out.println();
-                System.out.println();
-                System.out.println("Opções:");
-                System.out.println("1. Ajustar valor da compra para o saldo disponível");
-                System.out.println("2. Alterar valor da carteira e tentar novamente");
-                System.out.println("0. Cancelar compra");
-                System.out.print("Opção: ");
-                
-                int opcaoSaldo = lerInteiro();
-                System.out.println();
-                
-                if (opcaoSaldo == 1) {
-                    // Ajustar valor da compra para o saldo disponível
-                    // Calcula o valor máximo que pode ser investido (considerando taxas B3)
-                    // valorDisponivel = valorTotal + taxas
-                    // taxas = valorTotal * 0.000325 (taxas B3: 0,0325%)
-                    // valorDisponivel = valorTotal + (valorTotal * 0.000325)
-                    // valorDisponivel = valorTotal * 1.000325
-                    // valorTotal = valorDisponivel / 1.000325
-                    BigDecimal taxaB3Percentual = new BigDecimal("0.000325"); // Taxas B3: 0,0325%
-                    BigDecimal valorMaximoInvestimento = valorDisponivel.divide(BigDecimal.ONE.add(taxaB3Percentual), 2, java.math.RoundingMode.DOWN);
-                    
-                    // Verifica se a taxa mínima não excede o valor disponível
-                    BigDecimal taxaMinima = new BigDecimal("0.01");
-                    if (valorDisponivel.compareTo(taxaMinima) < 0) {
-                        System.out.println("Saldo insuficiente mesmo para a taxa mínima de R$ 0,01.");
-                        System.out.println();
-                        return;
-                    }
-                    
-                    // Ajusta a quantidade baseada no novo valor máximo
-                    BigDecimal novaQuantidade = valorMaximoInvestimento.divide(precoAtual, 4, java.math.RoundingMode.DOWN);
-                    
-                    if (novaQuantidade.compareTo(BigDecimal.ZERO) <= 0) {
-                        System.out.println("Não é possível comprar nenhuma ação com o saldo disponível.");
-                        System.out.println();
-                        return;
-                    }
-                    
-                    // Recalcula com a nova quantidade
-                    quantidade = novaQuantidade;
-                    valorTotal = quantidade.multiply(precoAtual);
-                    taxas = calcularTaxasCorretagem(valorTotal);
-                    valorLiquido = valorTotal.add(taxas);
-                    
-                    System.out.println();
-                    System.out.println("✅ Valor da compra ajustado automaticamente!");
-                    System.out.println();
-                    System.out.println("Nova quantidade: " + formatarQuantidade(quantidade));
-                    System.out.println("Novo valor total: R$ " + formatarValor(valorTotal));
-                    System.out.println("Taxas/corretagem: R$ " + formatarValor(taxas));
-                    System.out.println("Valor líquido: R$ " + formatarValor(valorLiquido));
-                    System.out.println();
-                    System.out.println();
-                    
-                    // Continua com o processo de compra com os valores ajustados
-                } else if (opcaoSaldo == 2) {
-                    // Alterar valor da carteira
-                    System.out.print("Novo valor da carteira (R$): ");
-                    BigDecimal novoValorInicial = lerDecimal();
-                    
-                    // Calcula o valor total investido (compras + taxas) - recarrega para garantir dados atualizados
-                    carteira = carteiraService.getCarteiraById(carteira.getId());
-                    BigDecimal valorTotalComprasValidacao = transacaoRepository.calcularValorTotalCompras(carteira);
-                    BigDecimal valorTotalTaxasValidacao = transacaoRepository.findByCarteira(carteira).stream()
-                            .filter(t -> t.getTipoTransacao() == com.invest.model.TipoTransacao.COMPRA)
-                            .map(t -> t.getTaxasCorretagem() != null ? t.getTaxasCorretagem() : BigDecimal.ZERO)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    BigDecimal valorTotalInvestido = valorTotalComprasValidacao.add(valorTotalTaxasValidacao);
-                    
-                    // Valida se o novo valor não é menor que o total investido
-                    if (novoValorInicial.compareTo(valorTotalInvestido) < 0) {
-                        System.out.println();
-                        System.out.println();
-                        System.out.println("⚠️ VALOR INVÁLIDO!");
-                        System.out.println("═══════════════════════════════════════════════════════════════");
-                        System.out.println();
-                        System.out.println("O valor da carteira não pode ser menor que o total investido.");
-                        System.out.println();
-                        System.out.println("Valor total investido (compras + taxas): R$ " + formatarValor(valorTotalInvestido));
-                        System.out.println("Valor informado: R$ " + formatarValor(novoValorInicial));
-                        System.out.println("Valor mínimo permitido: R$ " + formatarValor(valorTotalInvestido));
-                        System.out.println();
-                        System.out.println();
-                        return;
-                    }
-                    
-                    try {
-                        com.invest.dto.CarteiraRequest requestUpdate = new com.invest.dto.CarteiraRequest();
-                        requestUpdate.setNome(carteira.getNome());
-                        requestUpdate.setDescricao(carteira.getDescricao());
-                        requestUpdate.setObjetivo(carteira.getObjetivo());
-                        requestUpdate.setPerfilRisco(carteira.getPerfilRisco());
-                        requestUpdate.setPrazo(carteira.getPrazo());
-                        requestUpdate.setValorInicial(novoValorInicial);
-                        
-                        carteiraService.updateCarteira(carteira.getId(), requestUpdate);
-                        // Recarrega a carteira do banco para ter os dados atualizados
-                        carteira = carteiraService.getCarteiraById(carteira.getId());
-                        
-                        System.out.println();
-                        System.out.println("✅ Valor da carteira atualizado para R$ " + formatarValor(novoValorInicial));
-                        System.out.println();
-                        System.out.println();
-                        System.out.println("Reiniciando processo de compra...");
-                        System.out.println();
-                        System.out.println();
-                        
-                        // Reinicia o processo de compra com a carteira atualizada
-                        mostrarListaAcoesEComprar(carteira);
-                        return;
-                    } catch (Exception e) {
-                        System.out.println("Erro ao atualizar valor da carteira: " + e.getMessage());
-                        System.out.println();
-                        return;
-                    }
-                } else if (opcaoSaldo == 0) {
-                    System.out.println("Compra cancelada.");
-                    System.out.println();
-                    return;
-                } else {
-                    System.out.println("Opção inválida!");
-                    System.out.println();
-                    return;
-                }
-            }
+            System.out.print("Taxas/corretagem (R$, opcional): ");
+            BigDecimal taxas = lerDecimal();
 
             System.out.print("Observações (opcional): ");
             String observacoes = scanner.nextLine().trim();
 
             // Confirmar compra
-            System.out.println();
+            BigDecimal valorTotal = quantidade.multiply(precoAtual);
             System.out.println();
             System.out.println("RESUMO DA COMPRA:");
-            System.out.println("═══════════════════════════════════════════════════════════════");
-            System.out.println();
             System.out.println("Ação: " + codigoAtivo);
             System.out.println("Quantidade: " + formatarQuantidade(quantidade));
             System.out.println("Preço unitário: R$ " + formatarValor(precoAtual));
-            System.out.println();
             System.out.println("Valor total: R$ " + formatarValor(valorTotal));
-            System.out.println("Taxas/corretagem (calculadas automaticamente): R$ " + formatarValor(taxas));
-            System.out.println("Valor líquido: R$ " + formatarValor(valorLiquido));
-            System.out.println();
-            System.out.println("Valor disponível na carteira: R$ " + formatarValor(valorDisponivel));
-            System.out.println("Valor restante após compra: R$ " + formatarValor(valorDisponivel.subtract(valorLiquido)));
-            System.out.println();
+            if (taxas.compareTo(BigDecimal.ZERO) > 0) {
+                System.out.println("Taxas: R$ " + formatarValor(taxas));
+                System.out.println("Valor líquido: R$ " + formatarValor(valorTotal.add(taxas)));
+            }
+
             System.out.println();
             System.out.print("Confirmar compra? (S/N): ");
             String confirmacao = scanner.nextLine().trim().toUpperCase();
 
             if (!confirmacao.equals("S")) {
-                System.out.println();
                 System.out.println("Compra cancelada.");
-                System.out.println();
                 System.out.println();
                 return;
             }
@@ -1355,12 +680,9 @@ public class ConsoleApplication implements CommandLineRunner {
             com.invest.model.Transacao transacao = transacaoService.createTransacao(carteira.getId(), request);
 
             System.out.println();
-            System.out.println();
-            System.out.println("✅ Compra registrada com sucesso!");
-            System.out.println();
+            System.out.println("Compra registrada com sucesso!");
             System.out.println("Valor total: R$ " + formatarValor(transacao.getValorTotal()));
             System.out.println("Valor líquido: R$ " + formatarValor(transacao.getValorLiquido()));
-            System.out.println();
             System.out.println();
 
         } catch (Exception e) {
@@ -1371,296 +693,11 @@ public class ConsoleApplication implements CommandLineRunner {
     }
 
     /**
-     * Mostra lista de ações que o usuário possui e permite vender
-     */
-    private void mostrarListaAcoesEVender(Carteira carteira) {
-        // Recarrega a carteira do banco para garantir dados atualizados
-        carteira = carteiraService.getCarteiraById(carteira.getId());
-        
-        System.out.println();
-        System.out.println("AÇÕES DISPONÍVEIS PARA VENDA");
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println();
-
-        try {
-            // Busca os ativos da carteira que têm quantidade > 0
-            List<com.invest.model.Ativo> ativosCarteira = ativoRepository.findByCarteira(carteira);
-            List<com.invest.model.Ativo> ativosDisponiveis = new ArrayList<>();
-            
-            for (com.invest.model.Ativo ativo : ativosCarteira) {
-                if (ativo.getQuantidade() != null && ativo.getQuantidade().compareTo(BigDecimal.ZERO) > 0) {
-                    ativosDisponiveis.add(ativo);
-                }
-            }
-
-            if (ativosDisponiveis.isEmpty()) {
-                System.out.println("Você não possui ações para vender nesta carteira.");
-                System.out.println();
-                System.out.println("Pressione Enter para continuar...");
-                scanner.nextLine();
-                System.out.println();
-                return;
-            }
-
-            // Busca cotações atualizadas
-            Map<String, BigDecimal> cotacoes = googleSheetsService.getAllCotacoes();
-
-            // Ordenar por código
-            ativosDisponiveis.sort((a1, a2) -> a1.getCodigo().compareTo(a2.getCodigo()));
-
-            System.out.println("┌─────┬──────────────┬──────────────────────┬──────────────────────┬──────────────────────┐");
-            System.out.println("│ Op  │ Código       │ Quantidade          │ Preço Médio          │ Preço Atual          │");
-            System.out.println("├─────┼──────────────┼──────────────────────┼──────────────────────┼──────────────────────┤");
-
-            int index = 1;
-            Map<Integer, com.invest.model.Ativo> mapaOpcoes = new HashMap<>();
-            for (com.invest.model.Ativo ativo : ativosDisponiveis) {
-                mapaOpcoes.put(index, ativo);
-                BigDecimal precoAtual = cotacoes.getOrDefault(ativo.getCodigo(), ativo.getPrecoAtual());
-                if (precoAtual == null) {
-                    precoAtual = ativo.getPrecoCompra();
-                }
-                System.out.printf("│ %-3d │ %-12s │ %-20s │ R$ %-17s │ R$ %-17s │\n", 
-                    index, 
-                    ativo.getCodigo(), 
-                    formatarQuantidade(ativo.getQuantidade()),
-                    formatarValor(ativo.getPrecoCompra()),
-                    formatarValor(precoAtual));
-                index++;
-            }
-            System.out.println("└─────┴──────────────┴──────────────────────┴──────────────────────┴──────────────────────┘");
-            System.out.println();
-
-            System.out.println("Escolha a ação para vender (0 para voltar):");
-            System.out.print("Opção: ");
-            int opcao = lerInteiro();
-
-            if (opcao == 0) {
-                return;
-            }
-
-            if (!mapaOpcoes.containsKey(opcao)) {
-                System.out.println("Opção inválida!");
-                System.out.println();
-                return;
-            }
-
-            com.invest.model.Ativo ativoSelecionado = mapaOpcoes.get(opcao);
-            String codigoAtivo = ativoSelecionado.getCodigo();
-            BigDecimal quantidadeDisponivel = ativoSelecionado.getQuantidade();
-            BigDecimal precoMedio = ativoSelecionado.getPrecoCompra();
-            
-            // Busca preço atual do JSON ou usa o preço do ativo
-            BigDecimal precoAtual = cotacoes.getOrDefault(codigoAtivo, ativoSelecionado.getPrecoAtual());
-            if (precoAtual == null) {
-                precoAtual = precoMedio;
-            }
-
-            System.out.println();
-            System.out.println("Você selecionou: " + codigoAtivo);
-            System.out.println("Quantidade disponível: " + formatarQuantidade(quantidadeDisponivel));
-            System.out.println("Preço médio de compra: R$ " + formatarValor(precoMedio));
-            System.out.println("Preço atual: R$ " + formatarValor(precoAtual));
-            System.out.println();
-
-            System.out.println("Escolha o tipo de venda:");
-            System.out.println("1. Vender por quantidade de ações");
-            System.out.println("2. Vender por valor total (R$)");
-            System.out.println("0. Voltar");
-            System.out.print("Opção: ");
-
-            int tipoVendaOpcao = lerInteiro();
-            if (tipoVendaOpcao == 0) {
-                return;
-            }
-            
-            BigDecimal quantidade;
-            BigDecimal precoUnitario = precoAtual;
-
-            if (tipoVendaOpcao == 1) {
-                // Venda por quantidade
-                System.out.print("Quantidade de ações para vender (ou 0 para voltar): ");
-                quantidade = lerDecimal();
-                if (quantidade.compareTo(BigDecimal.ZERO) <= 0) {
-                    if (quantidade.compareTo(BigDecimal.ZERO) == 0) {
-                        return;
-                    } else {
-                        System.out.println();
-                        System.out.println("Quantidade deve ser positiva!");
-                        System.out.println();
-                        return;
-                    }
-                }
-                
-                // Valida se tem quantidade suficiente
-                if (quantidade.compareTo(quantidadeDisponivel) > 0) {
-                    System.out.println();
-                    System.out.println("⚠️ QUANTIDADE INSUFICIENTE!");
-                    System.out.println("═══════════════════════════════════════════════════════════════");
-                    System.out.println();
-                    System.out.println("Quantidade disponível: " + formatarQuantidade(quantidadeDisponivel));
-                    System.out.println("Quantidade solicitada: " + formatarQuantidade(quantidade));
-                    System.out.println("Quantidade em falta: " + formatarQuantidade(quantidade.subtract(quantidadeDisponivel)));
-                    System.out.println();
-                    System.out.println();
-                    System.out.println("Opções:");
-                    System.out.println("1. Ajustar quantidade para o disponível");
-                    System.out.println("0. Cancelar venda");
-                    System.out.print("Opção: ");
-                    
-                    int opcaoQuantidade = lerInteiro();
-                    System.out.println();
-                    
-                    if (opcaoQuantidade == 1) {
-                        quantidade = quantidadeDisponivel;
-                        System.out.println();
-                        System.out.println("✅ Quantidade ajustada para " + formatarQuantidade(quantidade));
-                        System.out.println();
-                    } else {
-                        System.out.println("Venda cancelada.");
-                        System.out.println();
-                        return;
-                    }
-                }
-            } else if (tipoVendaOpcao == 2) {
-                // Venda por valor total
-                System.out.print("Valor total a receber (R$) ou 0 para voltar: ");
-                BigDecimal valorTotal = lerDecimal();
-                if (valorTotal.compareTo(BigDecimal.ZERO) <= 0) {
-                    if (valorTotal.compareTo(BigDecimal.ZERO) == 0) {
-                        return;
-                    } else {
-                        System.out.println();
-                        System.out.println("Valor deve ser positivo!");
-                        System.out.println();
-                        return;
-                    }
-                }
-                quantidade = valorTotal.divide(precoAtual, 4, java.math.RoundingMode.DOWN);
-                System.out.println("Quantidade calculada: " + formatarQuantidade(quantidade));
-                
-                // Valida se tem quantidade suficiente
-                if (quantidade.compareTo(quantidadeDisponivel) > 0) {
-                    System.out.println();
-                    System.out.println("⚠️ QUANTIDADE INSUFICIENTE!");
-                    System.out.println("═══════════════════════════════════════════════════════════════");
-                    System.out.println();
-                    System.out.println("Quantidade disponível: " + formatarQuantidade(quantidadeDisponivel));
-                    System.out.println("Quantidade necessária: " + formatarQuantidade(quantidade));
-                    System.out.println();
-                    System.out.println("Valor máximo que pode receber: R$ " + 
-                        formatarValor(quantidadeDisponivel.multiply(precoAtual)));
-                    System.out.println();
-                    System.out.println();
-                    System.out.println("Opções:");
-                    System.out.println("1. Ajustar valor para o máximo disponível");
-                    System.out.println("0. Cancelar venda");
-                    System.out.print("Opção: ");
-                    
-                    int opcaoValor = lerInteiro();
-                    System.out.println();
-                    
-                    if (opcaoValor == 1) {
-                        valorTotal = quantidadeDisponivel.multiply(precoAtual);
-                        quantidade = quantidadeDisponivel;
-                        System.out.println();
-                        System.out.println("✅ Valor ajustado para R$ " + formatarValor(valorTotal));
-                        System.out.println("Quantidade: " + formatarQuantidade(quantidade));
-                        System.out.println();
-                    } else {
-                        System.out.println("Venda cancelada.");
-                        System.out.println();
-                        return;
-                    }
-                }
-            } else {
-                System.out.println("Opção inválida!");
-                System.out.println();
-                return;
-            }
-
-            // Calcula taxas automaticamente (0,5% do valor total da transação)
-            BigDecimal valorTotal = quantidade.multiply(precoAtual);
-            BigDecimal taxas = calcularTaxasCorretagem(valorTotal);
-            BigDecimal valorLiquido = valorTotal.subtract(taxas);
-
-            System.out.print("Observações (opcional): ");
-            String observacoes = scanner.nextLine().trim();
-
-            // Confirmar venda
-            System.out.println();
-            System.out.println();
-            System.out.println("RESUMO DA VENDA:");
-            System.out.println("═══════════════════════════════════════════════════════════════");
-            System.out.println();
-            System.out.println("Ação: " + codigoAtivo);
-            System.out.println("Quantidade: " + formatarQuantidade(quantidade));
-            System.out.println("Preço unitário: R$ " + formatarValor(precoAtual));
-            System.out.println("Preço médio de compra: R$ " + formatarValor(precoMedio));
-            System.out.println();
-            System.out.println("Valor total: R$ " + formatarValor(valorTotal));
-            System.out.println("Taxas/corretagem (calculadas automaticamente): R$ " + formatarValor(taxas));
-            System.out.println("Valor líquido a receber: R$ " + formatarValor(valorLiquido));
-            System.out.println();
-            
-            // Calcula lucro/prejuízo
-            BigDecimal valorInvestido = quantidade.multiply(precoMedio);
-            BigDecimal lucroPrejuizo = valorLiquido.subtract(valorInvestido);
-            String sinal = lucroPrejuizo.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
-            System.out.println("Valor investido (custo): R$ " + formatarValor(valorInvestido));
-            System.out.println("Lucro/Prejuízo: R$ " + sinal + formatarValor(lucroPrejuizo));
-            System.out.println();
-            System.out.println();
-            System.out.print("Confirmar venda? (S/N): ");
-            String confirmacao = scanner.nextLine().trim().toUpperCase();
-
-            if (!confirmacao.equals("S")) {
-                System.out.println();
-                System.out.println("Venda cancelada.");
-                System.out.println();
-                System.out.println();
-                return;
-            }
-
-            // Registrar venda
-            com.invest.dto.TransacaoRequest request = new com.invest.dto.TransacaoRequest();
-            request.setTipoTransacao(com.invest.model.TipoTransacao.VENDA);
-            request.setCodigoAtivo(codigoAtivo);
-            request.setNomeAtivo(ativoSelecionado.getNome());
-            request.setTipoAtivo(ativoSelecionado.getTipo());
-            request.setQuantidade(quantidade);
-            request.setPrecoUnitario(precoUnitario);
-            request.setTaxasCorretagem(taxas);
-            request.setObservacoes(observacoes);
-
-            com.invest.model.Transacao transacao = transacaoService.createTransacao(carteira.getId(), request);
-
-            System.out.println();
-            System.out.println();
-            System.out.println("✅ Venda registrada com sucesso!");
-            System.out.println();
-            System.out.println("Valor total: R$ " + formatarValor(transacao.getValorTotal()));
-            System.out.println("Valor líquido recebido: R$ " + formatarValor(transacao.getValorLiquido()));
-            System.out.println();
-            System.out.println();
-
-        } catch (Exception e) {
-            System.out.println();
-            System.out.println("Erro ao processar venda: " + e.getMessage());
-            e.printStackTrace();
-            System.out.println();
-            System.out.println("Pressione Enter para continuar...");
-            scanner.nextLine();
-            System.out.println();
-        }
-    }
-
-    /**
-     * Mostra relatório consolidado de rentabilidade de todas as carteiras
+     * Mostra relatórios de rentabilidade
      */
     private void mostrarRelatorios() {
-        System.out.println("RELATÓRIO DE RENTABILIDADE - CONSOLIDADO");
-        System.out.println("═══════════════════════════════════════════════════════════════");
+        System.out.println("RELATÓRIOS DE RENTABILIDADE");
+        System.out.println("══════════════════════════════");
         System.out.println();
 
         try {
@@ -1669,160 +706,26 @@ public class ConsoleApplication implements CommandLineRunner {
             if (carteiras.isEmpty()) {
                 System.out.println("Você não possui carteiras.");
                 System.out.println();
-                System.out.println("Pressione Enter para continuar...");
-                scanner.nextLine();
-                System.out.println();
                 return;
             }
 
-            // Variáveis para consolidar todas as carteiras
-            BigDecimal valorTotalInvestidoGeral = BigDecimal.ZERO;
-            BigDecimal valorAtualMercadoGeral = BigDecimal.ZERO;
-            BigDecimal valorAtualComProventosGeral = BigDecimal.ZERO;
-            BigDecimal totalComprasGeral = BigDecimal.ZERO;
-            BigDecimal totalVendasGeral = BigDecimal.ZERO;
-            BigDecimal totalProventosGeral = BigDecimal.ZERO;
-            BigDecimal totalTaxasGeral = BigDecimal.ZERO;
-            BigDecimal totalImpostosGeral = BigDecimal.ZERO;
-            int totalCarteiras = carteiras.size();
-            int totalAtivos = 0;
-            int ativosPositivos = 0;
-            int ativosNegativos = 0;
-
-            System.out.println("RESUMO POR CARTEIRA:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println();
-
-            // Calcula rentabilidade de cada carteira e consolida
-            for (Carteira carteira : carteiras) {
-                try {
-                    com.invest.dto.CarteiraRentabilidadeResponse rentabilidade = 
-                        rentabilidadeService.calcularRentabilidadeCarteira(carteira.getId());
-
-                    BigDecimal valorInvestido = rentabilidade.getValorTotalInvestido() != null 
-                        ? rentabilidade.getValorTotalInvestido() : BigDecimal.ZERO;
-                    BigDecimal valorMercado = rentabilidade.getValorAtualMercado() != null 
-                        ? rentabilidade.getValorAtualMercado() : BigDecimal.ZERO;
-                    BigDecimal valorComProventos = rentabilidade.getValorAtualComProventos() != null 
-                        ? rentabilidade.getValorAtualComProventos() : BigDecimal.ZERO;
-                    BigDecimal compras = rentabilidade.getValorTotalCompras() != null 
-                        ? rentabilidade.getValorTotalCompras() : BigDecimal.ZERO;
-                    BigDecimal vendas = rentabilidade.getValorTotalVendas() != null 
-                        ? rentabilidade.getValorTotalVendas() : BigDecimal.ZERO;
-                    BigDecimal proventos = rentabilidade.getValorTotalProventos() != null 
-                        ? rentabilidade.getValorTotalProventos() : BigDecimal.ZERO;
-                    BigDecimal taxas = rentabilidade.getTotalTaxasCorretagem() != null 
-                        ? rentabilidade.getTotalTaxasCorretagem() : BigDecimal.ZERO;
-                    BigDecimal impostos = rentabilidade.getTotalImpostos() != null 
-                        ? rentabilidade.getTotalImpostos() : BigDecimal.ZERO;
-
-                    valorTotalInvestidoGeral = valorTotalInvestidoGeral.add(valorInvestido);
-                    valorAtualMercadoGeral = valorAtualMercadoGeral.add(valorMercado);
-                    valorAtualComProventosGeral = valorAtualComProventosGeral.add(valorComProventos);
-                    totalComprasGeral = totalComprasGeral.add(compras);
-                    totalVendasGeral = totalVendasGeral.add(vendas);
-                    totalProventosGeral = totalProventosGeral.add(proventos);
-                    totalTaxasGeral = totalTaxasGeral.add(taxas);
-                    totalImpostosGeral = totalImpostosGeral.add(impostos);
-
-                    totalAtivos += rentabilidade.getTotalAtivos() != null ? rentabilidade.getTotalAtivos() : 0;
-                    ativosPositivos += rentabilidade.getAtivosPositivos() != null ? rentabilidade.getAtivosPositivos() : 0;
-                    ativosNegativos += rentabilidade.getAtivosNegativos() != null ? rentabilidade.getAtivosNegativos() : 0;
-
-                    // Exibe resumo da carteira
-                    System.out.println("📊 " + carteira.getNome() + ":");
-                    System.out.println("   Investido: R$ " + formatarValor(valorInvestido));
-                    System.out.println("   Valor Atual: R$ " + formatarValor(valorMercado));
-                    
-                    BigDecimal rentabilidadeCarteira = valorMercado.subtract(valorInvestido);
-                    BigDecimal percentualCarteira = BigDecimal.ZERO;
-                    if (valorInvestido.compareTo(BigDecimal.ZERO) > 0) {
-                        percentualCarteira = rentabilidadeCarteira
-                            .divide(valorInvestido, 4, java.math.RoundingMode.HALF_UP)
-                            .multiply(new BigDecimal("100"));
-                    }
-                    String sinal = rentabilidadeCarteira.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
-                    System.out.println("   Rentabilidade: R$ " + sinal + formatarValor(rentabilidadeCarteira) + 
-                                     " (" + sinal + formatarPercentual(percentualCarteira) + "%)");
-                    System.out.println();
-
-                } catch (Exception e) {
-                    System.out.println("⚠️ Erro ao calcular rentabilidade da carteira '" + carteira.getNome() + "': " + e.getMessage());
-                    System.out.println();
+            System.out.println("Escolha a carteira para relatório:");
+            for (int i = 0; i < carteiras.size(); i++) {
+                System.out.println((i + 1) + ". " + carteiras.get(i).getNome());
             }
+            System.out.print("Opção: ");
+
+            int opcao = lerInteiro();
+            if (opcao < 1 || opcao > carteiras.size()) {
+                System.out.println("Carteira inválida!");
+                return;
             }
 
-            System.out.println();
-            System.out.println("═══════════════════════════════════════════════════════════════");
-            System.out.println("RESUMO GERAL CONSOLIDADO");
-            System.out.println("═══════════════════════════════════════════════════════════════");
-            System.out.println();
-
-            System.out.println("INFORMAÇÕES GERAIS:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Total de Carteiras: " + totalCarteiras);
-            System.out.println("Total de Ativos: " + totalAtivos);
-            System.out.println("Ativos com Rentabilidade Positiva: " + ativosPositivos);
-            System.out.println("Ativos com Rentabilidade Negativa: " + ativosNegativos);
-            System.out.println();
-
-            System.out.println("VALORES CONSOLIDADOS:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Valor Total Investido: R$ " + formatarValor(valorTotalInvestidoGeral));
-            System.out.println("Valor Atual de Mercado: R$ " + formatarValor(valorAtualMercadoGeral));
-            System.out.println("Valor com Proventos: R$ " + formatarValor(valorAtualComProventosGeral));
-            System.out.println();
-
-            System.out.println("MOVIMENTAÇÃO:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Total de Compras: R$ " + formatarValor(totalComprasGeral));
-            System.out.println("Total de Vendas: R$ " + formatarValor(totalVendasGeral));
-            System.out.println("Total de Proventos: R$ " + formatarValor(totalProventosGeral));
-            System.out.println();
-
-            System.out.println("CUSTOS:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Total de Taxas: R$ " + formatarValor(totalTaxasGeral));
-            System.out.println("Total de Impostos: R$ " + formatarValor(totalImpostosGeral));
-            BigDecimal totalCustos = totalTaxasGeral.add(totalImpostosGeral);
-            System.out.println("Total de Custos: R$ " + formatarValor(totalCustos));
-            System.out.println();
-
-            System.out.println("RENTABILIDADE CONSOLIDADA:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            BigDecimal rentabilidadeBruta = valorAtualMercadoGeral.subtract(valorTotalInvestidoGeral);
-            BigDecimal rentabilidadeLiquida = valorAtualComProventosGeral.subtract(valorTotalInvestidoGeral).subtract(totalCustos);
-            
-            BigDecimal percentualBruto = BigDecimal.ZERO;
-            BigDecimal percentualLiquido = BigDecimal.ZERO;
-            if (valorTotalInvestidoGeral.compareTo(BigDecimal.ZERO) > 0) {
-                percentualBruto = rentabilidadeBruta
-                    .divide(valorTotalInvestidoGeral, 4, java.math.RoundingMode.HALF_UP)
-                    .multiply(new BigDecimal("100"));
-                percentualLiquido = rentabilidadeLiquida
-                    .divide(valorTotalInvestidoGeral, 4, java.math.RoundingMode.HALF_UP)
-                    .multiply(new BigDecimal("100"));
-            }
-
-            String sinalBruto = rentabilidadeBruta.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
-            String sinalLiquido = rentabilidadeLiquida.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
-            
-            System.out.println("Rentabilidade Bruta: R$ " + sinalBruto + formatarValor(rentabilidadeBruta) + 
-                             " (" + sinalBruto + formatarPercentual(percentualBruto) + "%)");
-            System.out.println("Rentabilidade Líquida: R$ " + sinalLiquido + formatarValor(rentabilidadeLiquida) + 
-                             " (" + sinalLiquido + formatarPercentual(percentualLiquido) + "%)");
-            System.out.println();
-
-            System.out.println("Pressione Enter para continuar...");
-            scanner.nextLine();
-            System.out.println();
+            Carteira carteira = carteiras.get(opcao - 1);
+            mostrarRentabilidadeCarteira(carteira);
 
         } catch (Exception e) {
             System.out.println("Erro ao gerar relatório: " + e.getMessage());
-            e.printStackTrace();
-            System.out.println();
-            System.out.println("Pressione Enter para continuar...");
-            scanner.nextLine();
             System.out.println();
         }
     }
@@ -1871,7 +774,6 @@ public class ConsoleApplication implements CommandLineRunner {
 
             System.out.println("Pressione Enter para continuar...");
             scanner.nextLine();
-            System.out.println();
 
         } catch (Exception e) {
             System.out.println("Erro ao calcular rentabilidade: " + e.getMessage());
@@ -1900,13 +802,9 @@ public class ConsoleApplication implements CommandLineRunner {
             for (int i = 0; i < carteiras.size(); i++) {
                 System.out.println((i + 1) + ". " + carteiras.get(i).getNome());
             }
-            System.out.println("0. Voltar");
             System.out.print("Opção: ");
 
             int opcao = lerInteiro();
-            if (opcao == 0) {
-                return;
-            }
             if (opcao < 1 || opcao > carteiras.size()) {
                 System.out.println("Carteira inválida!");
                 return;
@@ -2069,7 +967,6 @@ public class ConsoleApplication implements CommandLineRunner {
 
             System.out.println("Pressione Enter para continuar...");
             scanner.nextLine();
-            System.out.println();
 
         } catch (Exception e) {
             System.out.println("Erro ao carregar ativos: " + e.getMessage());
@@ -2077,7 +974,6 @@ public class ConsoleApplication implements CommandLineRunner {
             System.out.println();
             System.out.println("Pressione Enter para continuar...");
             scanner.nextLine();
-            System.out.println();
         }
     }
 
@@ -2117,7 +1013,6 @@ public class ConsoleApplication implements CommandLineRunner {
 
             System.out.println("Pressione Enter para continuar...");
             scanner.nextLine();
-            System.out.println();
 
         } catch (Exception e) {
             System.out.println("Erro ao carregar transações: " + e.getMessage());
@@ -2132,9 +1027,9 @@ public class ConsoleApplication implements CommandLineRunner {
         System.out.println(" CONFIGURAÇÕES");
         System.out.println("═════════════════");
         System.out.println();
-        System.out.println("1. Alterar Senha");
-        System.out.println("2. Dados Pessoais");
-        System.out.println("0. Voltar");
+        System.out.println("1. Alterar Email");
+        System.out.println("2. Alterar Nome");
+        System.out.println("3. Voltar");
         System.out.println();
         System.out.print("Opção: ");
 
@@ -2143,12 +1038,12 @@ public class ConsoleApplication implements CommandLineRunner {
 
         switch (opcao) {
             case 1:
-                alterarSenha();
+                alterarEmail();
                 break;
             case 2:
-                verDadosPessoaisEValorInvestido();
+                alterarNome();
                 break;
-            case 0:
+            case 3:
                 return;
             default:
                 System.out.println("Opção inválida!");
@@ -2157,180 +1052,46 @@ public class ConsoleApplication implements CommandLineRunner {
     }
 
     /**
-     * Altera senha do investidor
+     * Altera email do investidor
      */
-    private void alterarSenha() {
-        System.out.println("ALTERAR SENHA");
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println();
-        
-        System.out.print("Nova senha (mínimo 4 caracteres): ");
-        String novaSenha = lerSenha();
-        
-        if (novaSenha.isEmpty()) {
-            System.out.println();
-            System.out.println("Senha não pode ser vazia!");
-            System.out.println();
-            System.out.println();
+    private void alterarEmail() {
+        System.out.print("Novo email: ");
+        String novoEmail = scanner.nextLine().trim();
+
+        if (novoEmail.isEmpty()) {
+            System.out.println("Email não pode ser vazio!");
             return;
         }
-        
-        if (novaSenha.length() < 4) {
-            System.out.println();
-            System.out.println("Senha deve ter no mínimo 4 caracteres!");
-            System.out.println();
-            System.out.println();
-            return;
-        }
-        
-        System.out.print("Confirme a nova senha: ");
-        String confirmacaoSenha = lerSenha();
-        
-        if (!novaSenha.equals(confirmacaoSenha)) {
-            System.out.println();
-            System.out.println("As senhas não coincidem! Tente novamente.");
-            System.out.println();
-            System.out.println();
-            return;
-        }
-        
+
         try {
-            // Faz hash da nova senha antes de atualizar
-            investidorLogado.setSenha(novaSenha);
+            investidorLogado.setEmail(novoEmail);
             investidorService.updateInvestidor(investidorLogado.getId(), investidorLogado);
-            
-            // Reautentica com a nova senha para atualizar o token JWT
-            AuthService.AuthResult resultado = authService.authenticate(investidorLogado.getEmail(), novaSenha);
-            if (resultado.isSucesso()) {
-                jwtToken = resultado.getToken();
-            }
-            
-            System.out.println();
-            System.out.println("✅ Senha alterada com sucesso!");
-            System.out.println();
+            System.out.println("Email alterado com sucesso!");
         } catch (Exception e) {
-            System.out.println();
-            System.out.println("Erro ao alterar senha: " + e.getMessage());
-            System.out.println();
+            System.out.println("Erro ao alterar email: " + e.getMessage());
         }
         System.out.println();
     }
 
     /**
-     * Mostra dados pessoais do investidor e valor total investido
+     * Altera nome do investidor
      */
-    private void verDadosPessoaisEValorInvestido() {
-        System.out.println(" DADOS PESSOAIS E VALOR TOTAL INVESTIDO");
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println();
-        
-        try {
-            // Recarrega o investidor do banco para garantir dados atualizados
-            investidorLogado = investidorService.getInvestidorById(investidorLogado.getId());
-            
-            // Exibe dados pessoais
-            System.out.println("DADOS PESSOAIS:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Nome: " + investidorLogado.getNome());
-            System.out.println("Email: " + investidorLogado.getEmail());
-            System.out.println("ID: " + investidorLogado.getId());
-            
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
-            if (investidorLogado.getDataCriacao() != null) {
-                System.out.println("Data de Criação: " + investidorLogado.getDataCriacao().format(formatter));
-            }
-            if (investidorLogado.getDataAtualizacao() != null) {
-                System.out.println("Última Atualização: " + investidorLogado.getDataAtualizacao().format(formatter));
+    private void alterarNome() {
+        System.out.print("Novo nome: ");
+        String novoNome = scanner.nextLine().trim();
+
+        if (novoNome.isEmpty()) {
+            System.out.println("Nome não pode ser vazio!");
+            return;
         }
 
-            System.out.println();
-            
-            // Calcula valor total investido em todas as carteiras
-            List<Carteira> carteiras = carteiraService.getCarteirasByInvestidor(investidorLogado.getId());
-            BigDecimal valorTotalInvestido = BigDecimal.ZERO;
-            BigDecimal valorAtualMercado = BigDecimal.ZERO;
-            int totalCarteiras = carteiras.size();
-            
-            System.out.println("INVESTIMENTOS:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Total de Carteiras: " + totalCarteiras);
-            System.out.println();
-            
-            if (carteiras.isEmpty()) {
-                System.out.println("Nenhuma carteira cadastrada ainda.");
-            } else {
-                System.out.println("Resumo por Carteira:");
-                System.out.println();
-                
-                for (Carteira carteira : carteiras) {
-                    try {
-                        com.invest.dto.CarteiraRentabilidadeResponse rentabilidade = 
-                            rentabilidadeService.calcularRentabilidadeCarteira(carteira.getId());
-                        
-                        BigDecimal valorInvestidoCarteira = rentabilidade.getValorTotalInvestido() != null 
-                            ? rentabilidade.getValorTotalInvestido() 
-                            : BigDecimal.ZERO;
-                        BigDecimal valorMercadoCarteira = rentabilidade.getValorAtualMercado() != null 
-                            ? rentabilidade.getValorAtualMercado() 
-                            : BigDecimal.ZERO;
-                        
-                        valorTotalInvestido = valorTotalInvestido.add(valorInvestidoCarteira);
-                        valorAtualMercado = valorAtualMercado.add(valorMercadoCarteira);
-                        
-                        System.out.println("  • " + carteira.getNome() + ":");
-                        
-                        // Busca e exibe os nomes das ações
-                        List<com.invest.model.Ativo> ativos = ativoRepository.findByCarteira(carteira);
-                        if (ativos != null && !ativos.isEmpty()) {
-                            System.out.print("    Ações: ");
-                            List<String> nomesAcoes = new ArrayList<>();
-                            for (com.invest.model.Ativo ativo : ativos) {
-                                if (ativo.getNome() != null && !ativo.getNome().trim().isEmpty()) {
-                                    nomesAcoes.add(ativo.getNome());
-                                }
-                            }
-                            if (!nomesAcoes.isEmpty()) {
-                                System.out.println(String.join(", ", nomesAcoes));
-                            } else {
-                                System.out.println("Nenhuma ação cadastrada");
-                            }
-                        } else {
-                            System.out.println("    Ações: Nenhuma ação cadastrada");
-                        }
-                        
-                        System.out.println("    Valor Investido: R$ " + formatarValor(valorInvestidoCarteira));
-                        System.out.println("    Valor Atual: R$ " + formatarValor(valorMercadoCarteira));
-                        System.out.println();
+        try {
+            investidorLogado.setNome(novoNome);
+            investidorService.updateInvestidor(investidorLogado.getId(), investidorLogado);
+            System.out.println("Nome alterado com sucesso!");
         } catch (Exception e) {
-                        System.out.println("  • " + carteira.getNome() + ": Erro ao calcular rentabilidade");
-                        System.out.println();
-                    }
-                }
-                
-                System.out.println("TOTAL GERAL:");
-                System.out.println("───────────────────────────────────────────────────────────");
-                System.out.println("Valor Total Investido: R$ " + formatarValor(valorTotalInvestido));
-                System.out.println("Valor Atual no Mercado: R$ " + formatarValor(valorAtualMercado));
-                
-                if (valorTotalInvestido.compareTo(BigDecimal.ZERO) > 0) {
-                    BigDecimal rentabilidadeTotal = valorAtualMercado.subtract(valorTotalInvestido);
-                    BigDecimal percentualRentabilidade = rentabilidadeTotal
-                        .divide(valorTotalInvestido, 4, java.math.RoundingMode.HALF_UP)
-                        .multiply(new BigDecimal("100"));
-                    
-                    System.out.println("Rentabilidade: R$ " + formatarValor(rentabilidadeTotal) + 
-                                     " (" + formatarValor(percentualRentabilidade) + "%)");
-                }
-            }
-            
-        } catch (Exception e) {
-            System.out.println("Erro ao buscar dados: " + e.getMessage());
-            e.printStackTrace();
+            System.out.println("Erro ao alterar nome: " + e.getMessage());
         }
-        
-        System.out.println();
-        System.out.println("Pressione Enter para continuar...");
-        scanner.nextLine();
         System.out.println();
     }
 
@@ -2345,8 +1106,7 @@ public class ConsoleApplication implements CommandLineRunner {
         System.out.println("2. 📄 Alterar Descrição");
         System.out.println("3. Alterar Objetivo");
         System.out.println("4.  Alterar Perfil de Risco");
-        System.out.println("5. Alterar Valor da Carteira");
-        System.out.println("0. Voltar");
+        System.out.println("5. Voltar");
         System.out.println();
         System.out.print("Opção: ");
 
@@ -2363,83 +1123,26 @@ public class ConsoleApplication implements CommandLineRunner {
 
             switch (opcao) {
                 case 1:
-                    System.out.print("Novo nome (ou 0 para cancelar): ");
-                    String novoNome = scanner.nextLine().trim();
-                    if (novoNome.equals("0")) {
-                        return;
-                    }
-                    request.setNome(novoNome);
+                    System.out.print("Novo nome: ");
+                    request.setNome(scanner.nextLine().trim());
                     break;
                 case 2:
-                    System.out.print("Nova descrição (ou 0 para cancelar): ");
-                    String novaDescricao = scanner.nextLine().trim();
-                    if (novaDescricao.equals("0")) {
-                        return;
-                    }
-                    request.setDescricao(novaDescricao);
+                    System.out.print("Nova descrição: ");
+                    request.setDescricao(scanner.nextLine().trim());
                     break;
                 case 3:
                     System.out.println("Novo objetivo:");
                     System.out.println("1. Aposentadoria 2. Reserva de Emergência 3. Valorização Rápida 4. Renda Passiva 5. Educação 6. Casa Própria 7. Viagem 8. Outros");
-                    System.out.println("0. Voltar");
                     System.out.print("Opção: ");
-                    int objetivoOpcao = lerInteiro();
-                    if (objetivoOpcao == 0) {
-                        return;
-                    }
-                    request.setObjetivo(obterObjetivoCarteira(objetivoOpcao));
+                    request.setObjetivo(obterObjetivoCarteira(lerInteiro()));
                     break;
                 case 4:
                     System.out.println("Novo perfil de risco:");
-                    System.out.println("1. Baixo Risco 2. Moderado Risco 3. Alto Risco");
-                    System.out.println("0. Voltar");
+                    System.out.println("1. Baixo Risco 2. Alto Risco");
                     System.out.print("Opção: ");
-                    int perfilOpcao = lerInteiro();
-                    if (perfilOpcao == 0) {
-                        return;
-                    }
-                    request.setPerfilRisco(obterPerfilRisco(perfilOpcao));
+                    request.setPerfilRisco(obterPerfilRisco(lerInteiro()));
                     break;
                 case 5:
-                    System.out.print("Novo valor da carteira (R$) ou 0 para cancelar: ");
-                    BigDecimal novoValor = lerDecimal();
-                    if (novoValor.compareTo(BigDecimal.ZERO) < 0) {
-                        System.out.println("Valor não pode ser negativo!");
-                        return;
-                    }
-                    if (novoValor.compareTo(BigDecimal.ZERO) == 0) {
-                        System.out.println("Operação cancelada.");
-                        return;
-                    }
-                    
-                    // Calcula o valor total investido (compras + taxas)
-                    BigDecimal valorTotalCompras = transacaoRepository.calcularValorTotalCompras(carteira);
-                    BigDecimal valorTotalTaxas = transacaoRepository.findByCarteira(carteira).stream()
-                            .filter(t -> t.getTipoTransacao() == com.invest.model.TipoTransacao.COMPRA)
-                            .map(t -> t.getTaxasCorretagem() != null ? t.getTaxasCorretagem() : BigDecimal.ZERO)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    BigDecimal valorTotalInvestido = valorTotalCompras.add(valorTotalTaxas);
-                    
-                    // Valida se o novo valor não é menor que o total investido
-                    if (novoValor.compareTo(valorTotalInvestido) < 0) {
-                        System.out.println();
-                        System.out.println();
-                        System.out.println("⚠️ VALOR INVÁLIDO!");
-                        System.out.println("═══════════════════════════════════════════════════════════════");
-                        System.out.println();
-                        System.out.println("O valor da carteira não pode ser menor que o total investido.");
-                        System.out.println();
-                        System.out.println("Valor total investido (compras + taxas): R$ " + formatarValor(valorTotalInvestido));
-                        System.out.println("Valor informado: R$ " + formatarValor(novoValor));
-                        System.out.println("Valor mínimo permitido: R$ " + formatarValor(valorTotalInvestido));
-                        System.out.println();
-                        System.out.println();
-                        return;
-                    }
-                    
-                    request.setValorInicial(novoValor);
-                    break;
-                case 0:
                     return;
                 default:
                     System.out.println("Opção inválida!");
@@ -2447,269 +1150,11 @@ public class ConsoleApplication implements CommandLineRunner {
             }
 
             carteiraService.updateCarteira(carteira.getId(), request);
-            System.out.println();
-            System.out.println("✅ Carteira atualizada com sucesso!");
-            System.out.println();
+            System.out.println("Carteira atualizada com sucesso!");
             System.out.println();
 
         } catch (Exception e) {
             System.out.println("Erro ao atualizar carteira: " + e.getMessage());
-            System.out.println();
-        }
-    }
-
-    /**
-     * Mostra análise completa de inflação e valores deflacionados da carteira
-     */
-    private void mostrarAnaliseInflacao(Carteira carteira) {
-        analiseCompletaCarteira(carteira);
-    }
-
-    private void analiseCompletaCarteira(Carteira carteira) {
-        System.out.println("ANÁLISE COMPLETA DE INFLAÇÃO - " + carteira.getNome());
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println();
-        
-        try {
-            // Busca todas as transações
-            List<com.invest.model.Transacao> transacoes = transacaoRepository.findByCarteira(carteira);
-            
-            if (transacoes.isEmpty()) {
-                System.out.println("Nenhuma transação registrada nesta carteira.");
-                System.out.println();
-                System.out.println("Pressione Enter para continuar...");
-                scanner.nextLine();
-                System.out.println();
-                return;
-            }
-            
-            // Calcula valores totais
-            BigDecimal valorTotalCompras = transacaoRepository.calcularValorTotalCompras(carteira);
-            BigDecimal valorTotalVendas = transacaoRepository.calcularValorTotalVendas(carteira);
-            BigDecimal valorAtualMercado = carteira.getValorAtual() != null ? carteira.getValorAtual() : BigDecimal.ZERO;
-            
-            // Data da primeira transação e data atual
-            java.time.LocalDate dataPrimeiraTransacao = transacoes.stream()
-                .map(t -> t.getDataTransacao().toLocalDate())
-                .min(java.util.Comparator.naturalOrder())
-                .orElse(java.time.LocalDate.now());
-            
-            java.time.LocalDate dataAtual = java.time.LocalDate.now();
-            
-            // Calcula inflação acumulada
-            BigDecimal inflacaoAcumulada = inflacaoService.calcularInflacaoAcumulada(dataPrimeiraTransacao, dataAtual);
-            
-            // Valor investido deflacionado
-            BigDecimal valorInvestidoDeflacionado = inflacaoService.calcularValorDeflacionado(
-                valorTotalCompras, dataAtual, dataPrimeiraTransacao);
-            
-            // Valor atual deflacionado
-            BigDecimal valorAtualDeflacionado = inflacaoService.calcularValorDeflacionado(
-                valorAtualMercado, dataAtual, dataPrimeiraTransacao);
-            
-            // Ganho real
-            BigDecimal ganhoReal = inflacaoService.calcularGanhoReal(
-                valorTotalCompras, valorAtualMercado, dataPrimeiraTransacao, dataAtual);
-            
-            System.out.println("PERÍODO DE ANÁLISE:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Data da primeira transação: " + formatarData(dataPrimeiraTransacao.atStartOfDay()));
-            System.out.println("Data atual: " + formatarData(dataAtual.atStartOfDay()));
-            System.out.println();
-            
-            System.out.println("VALORES NOMINAIS:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Total investido (compras): R$ " + formatarValor(valorTotalCompras));
-            System.out.println("Total vendido: R$ " + formatarValor(valorTotalVendas));
-            System.out.println("Valor atual de mercado: R$ " + formatarValor(valorAtualMercado));
-            System.out.println();
-            
-            System.out.println("INFLAÇÃO:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Inflação acumulada no período: " + formatarPercentual(inflacaoAcumulada.multiply(new BigDecimal("100"))));
-            System.out.println();
-            
-            System.out.println("VALORES DEFLACIONADOS (poder de compra na data inicial):");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Valor investido deflacionado: R$ " + formatarValor(valorInvestidoDeflacionado));
-            System.out.println("Valor atual deflacionado: R$ " + formatarValor(valorAtualDeflacionado));
-            System.out.println();
-            
-            System.out.println("GANHO REAL:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            BigDecimal ganhoNominal = valorAtualMercado.subtract(valorTotalCompras);
-            BigDecimal ganhoNominalPercentual = BigDecimal.ZERO;
-            if (valorTotalCompras.compareTo(BigDecimal.ZERO) > 0) {
-                ganhoNominalPercentual = ganhoNominal.divide(valorTotalCompras, 4, java.math.RoundingMode.HALF_UP)
-                                                     .multiply(new BigDecimal("100"));
-            }
-            
-            System.out.println("Ganho nominal: R$ " + formatarValor(ganhoNominal) + 
-                             " (" + formatarPercentual(ganhoNominalPercentual) + "%)");
-            System.out.println("Ganho real: " + formatarPercentual(ganhoReal.multiply(new BigDecimal("100"))));
-            System.out.println();
-            
-            if (ganhoReal.compareTo(BigDecimal.ZERO) > 0) {
-                System.out.println("✅ A carteira teve ganho real positivo!");
-            } else if (ganhoReal.compareTo(BigDecimal.ZERO) < 0) {
-                System.out.println("⚠️ A carteira teve perda real (ganho não superou a inflação)");
-            } else {
-                System.out.println("➡️ A carteira manteve o poder de compra");
-            }
-            System.out.println();
-            System.out.println();
-            
-        } catch (Exception e) {
-            System.out.println();
-            System.out.println("Erro ao realizar análise: " + e.getMessage());
-            e.printStackTrace();
-            System.out.println();
-        }
-        
-        System.out.println("Pressione Enter para continuar...");
-        scanner.nextLine();
-        System.out.println();
-    }
-
-    /**
-     * Mostra o histórico completo da carteira com todas as alterações de valores
-     */
-    private void mostrarHistoricoCarteira(Carteira carteira) {
-        System.out.println("HISTÓRICO DA CARTEIRA - " + carteira.getNome());
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println();
-        
-        try {
-            // Recarrega a carteira para garantir dados atualizados
-            carteira = carteiraService.getCarteiraById(carteira.getId());
-            
-            // Busca todas as transações ordenadas por data
-            List<com.invest.model.Transacao> transacoes = transacaoRepository.findByCarteira(carteira);
-            transacoes.sort((t1, t2) -> {
-                if (t1.getDataTransacao() == null && t2.getDataTransacao() == null) return 0;
-                if (t1.getDataTransacao() == null) return 1;
-                if (t2.getDataTransacao() == null) return -1;
-                return t1.getDataTransacao().compareTo(t2.getDataTransacao());
-            });
-            
-            // Calcula valores acumulados ao longo do tempo
-            BigDecimal valorTotalInvestido = BigDecimal.ZERO;
-            BigDecimal valorTotalVendas = BigDecimal.ZERO;
-            BigDecimal valorTotalTaxas = BigDecimal.ZERO;
-            BigDecimal taxasCompras = BigDecimal.ZERO;
-            BigDecimal taxasVendas = BigDecimal.ZERO;
-            
-            System.out.println("CRIAÇÃO DA CARTEIRA:");
-            System.out.println("───────────────────────────────────────────────────────────");
-            System.out.println("Data: " + formatarData(carteira.getDataCriacao()));
-            System.out.println("Valor inicial da carteira: R$ " + formatarValor(carteira.getValorInicial()));
-            System.out.println();
-            System.out.println();
-            
-            if (transacoes.isEmpty()) {
-                System.out.println("Nenhuma transação registrada ainda.");
-                System.out.println();
-            } else {
-                System.out.println("TRANSAÇÕES E ALTERAÇÕES:");
-                System.out.println("───────────────────────────────────────────────────────────");
-                System.out.println();
-                
-                for (com.invest.model.Transacao transacao : transacoes) {
-                    System.out.println("📅 " + formatarData(transacao.getDataTransacao()));
-                    System.out.println("   Tipo: " + transacao.getTipoTransacao().getDescricao());
-                    System.out.println("   Ativo: " + transacao.getCodigoAtivo() + " (" + transacao.getNomeAtivo() + ")");
-                    System.out.println("   Quantidade: " + formatarQuantidade(transacao.getQuantidade()));
-                    System.out.println("   Preço unitário: R$ " + formatarValor(transacao.getPrecoUnitario()));
-                    System.out.println("   Valor total: R$ " + formatarValor(transacao.getValorTotal()));
-                    
-                    if (transacao.getTipoTransacao() == com.invest.model.TipoTransacao.COMPRA) {
-                        valorTotalInvestido = valorTotalInvestido.add(transacao.getValorTotal());
-                        if (transacao.getTaxasCorretagem() != null) {
-                            BigDecimal taxa = transacao.getTaxasCorretagem();
-                            valorTotalTaxas = valorTotalTaxas.add(taxa);
-                            taxasCompras = taxasCompras.add(taxa);
-                            System.out.println("   Taxas: R$ " + formatarValor(taxa));
-                        }
-                        System.out.println("   → Compra realizada");
-                    } else if (transacao.getTipoTransacao() == com.invest.model.TipoTransacao.VENDA) {
-                        valorTotalVendas = valorTotalVendas.add(transacao.getValorTotal());
-                        if (transacao.getTaxasCorretagem() != null) {
-                            BigDecimal taxa = transacao.getTaxasCorretagem();
-                            valorTotalTaxas = valorTotalTaxas.add(taxa);
-                            taxasVendas = taxasVendas.add(taxa);
-                            System.out.println("   Taxas: R$ " + formatarValor(taxa));
-                        }
-                        System.out.println("   → Venda realizada");
-                    }
-                    
-                    if (transacao.getObservacoes() != null && !transacao.getObservacoes().trim().isEmpty()) {
-                        System.out.println("   Observações: " + transacao.getObservacoes());
-                    }
-                    
-                    System.out.println();
-                }
-            }
-            
-            // Mostra alterações no valor da carteira (quando foi editado)
-            if (carteira.getDataAtualizacao() != null && 
-                carteira.getDataAtualizacao().isAfter(carteira.getDataCriacao())) {
-                System.out.println();
-                System.out.println("ALTERAÇÕES NO VALOR DA CARTEIRA:");
-                System.out.println("───────────────────────────────────────────────────────────");
-                System.out.println("Data da última alteração: " + formatarData(carteira.getDataAtualizacao()));
-                System.out.println("Valor atual da carteira: R$ " + formatarValor(carteira.getValorInicial()));
-                System.out.println();
-            }
-            
-            // Resumo final
-            System.out.println();
-            System.out.println("═══════════════════════════════════════════════════════════════");
-            System.out.println("RESUMO DO HISTÓRICO:");
-            System.out.println("═══════════════════════════════════════════════════════════════");
-            System.out.println();
-            System.out.println("Valor inicial da carteira: R$ " + formatarValor(carteira.getValorInicial()));
-            System.out.println("Total de compras: R$ " + formatarValor(valorTotalInvestido));
-            System.out.println("Total de vendas: R$ " + formatarValor(valorTotalVendas));
-            System.out.println("Total de taxas: R$ " + formatarValor(valorTotalTaxas));
-            System.out.println();
-            
-            // Cálculo correto do valor líquido investido:
-            // - Compras aumentam o investimento (incluindo taxas)
-            // - Vendas reduzem o investimento (descontando taxas, pois você recebe menos)
-            // Fórmula: (compras + taxas de compras) - (vendas - taxas de vendas)
-            BigDecimal valorInvestidoComTaxas = valorTotalInvestido.add(taxasCompras);
-            BigDecimal valorRecebidoVendas = valorTotalVendas.subtract(taxasVendas);
-            BigDecimal valorLiquidoInvestido = valorInvestidoComTaxas.subtract(valorRecebidoVendas);
-            System.out.println("Valor líquido investido: R$ " + formatarValor(valorLiquidoInvestido));
-            System.out.println("Valor atual de mercado: R$ " + formatarValor(carteira.getValorAtual()));
-            System.out.println();
-            
-            if (carteira.getValorAtual() != null && valorLiquidoInvestido.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal rentabilidade = carteira.getValorAtual().subtract(valorLiquidoInvestido);
-                BigDecimal percentual = rentabilidade
-                    .divide(valorLiquidoInvestido, 4, java.math.RoundingMode.HALF_UP)
-                    .multiply(new BigDecimal("100"));
-                String sinal = rentabilidade.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
-                System.out.println("Rentabilidade: R$ " + sinal + formatarValor(rentabilidade) + 
-                                 " (" + sinal + formatarPercentual(percentual) + "%)");
-            }
-            
-            System.out.println();
-            System.out.println("Total de transações: " + transacoes.size());
-            System.out.println();
-            System.out.println();
-            System.out.println("Pressione Enter para continuar...");
-            scanner.nextLine();
-            System.out.println();
-            System.out.println();
-            
-        } catch (Exception e) {
-            System.out.println();
-            System.out.println("Erro ao exibir histórico: " + e.getMessage());
-            e.printStackTrace();
-            System.out.println();
-            System.out.println("Pressione Enter para continuar...");
-            scanner.nextLine();
             System.out.println();
         }
     }
@@ -2757,8 +1202,7 @@ public class ConsoleApplication implements CommandLineRunner {
     private com.invest.model.PerfilRisco obterPerfilRisco(int opcao) {
         switch (opcao) {
             case 1: return com.invest.model.PerfilRisco.BAIXO_RISCO;
-            case 2: return com.invest.model.PerfilRisco.MODERADO_RISCO;
-            case 3: return com.invest.model.PerfilRisco.ALTO_RISCO;
+            case 2: return com.invest.model.PerfilRisco.ALTO_RISCO;
             default: return com.invest.model.PerfilRisco.BAIXO_RISCO;
         }
     }
@@ -2776,6 +1220,7 @@ public class ConsoleApplication implements CommandLineRunner {
         switch (opcao) {
             case 1: return com.invest.model.TipoTransacao.COMPRA;
             case 2: return com.invest.model.TipoTransacao.VENDA;
+            case 3: return com.invest.model.TipoTransacao.PROVENTO;
             default: return com.invest.model.TipoTransacao.COMPRA;
         }
     }
@@ -2811,136 +1256,5 @@ public class ConsoleApplication implements CommandLineRunner {
     private String formatarData(LocalDateTime data) {
         if (data == null) return "N/A";
         return data.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
-    }
-
-    /**
-     * Calcula as taxas de corretagem e operacionais baseadas no mercado brasileiro atual
-     * Considera:
-     * - Corretagem: R$ 0,00 (muitas corretoras são gratuitas hoje)
-     * - Taxas B3 (obrigatórias): 0,0325% do valor da operação
-     *   * Emolumentos: 0,005%
-     *   * Liquidação: 0,0275%
-     */
-    private BigDecimal calcularTaxasCorretagem(BigDecimal valorTotal) {
-        if (valorTotal == null || valorTotal.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
-        }
-        
-        // Taxas da B3 (obrigatórias): Emolumentos (0,005%) + Liquidação (0,0275%) = 0,0325%
-        BigDecimal taxaB3Percentual = new BigDecimal("0.000325"); // 0,0325%
-        BigDecimal taxasB3 = valorTotal.multiply(taxaB3Percentual);
-        
-        // Corretagem: R$ 0,00 (muitas corretoras são gratuitas atualmente)
-        // Se quiser simular corretoras que cobram, pode adicionar:
-        // BigDecimal corretagem = new BigDecimal("4.90"); // Ex: XP Investimentos
-        BigDecimal corretagem = BigDecimal.ZERO;
-        
-        // Total de taxas = Taxas B3 + Corretagem
-        BigDecimal taxas = taxasB3.add(corretagem);
-        
-        // Taxa mínima: R$ 0,01 (para garantir que operações pequenas tenham algum custo mínimo)
-        BigDecimal taxaMinima = new BigDecimal("0.01");
-        if (taxas.compareTo(taxaMinima) < 0) {
-            taxas = taxaMinima;
-        }
-        
-        // Não há taxa máxima (as taxas B3 são proporcionais ao valor)
-        
-        // Arredonda para 2 casas decimais
-        return taxas.setScale(2, java.math.RoundingMode.HALF_UP);
-    }
-
-
-    /**
-     * Lê a senha do terminal mostrando asteriscos em vez dos caracteres
-     * @return A senha digitada pelo usuário (valor real, não os asteriscos)
-     */
-    private String lerSenha() {
-        // Tenta usar System.console() primeiro (funciona em terminais reais)
-        // Este é o método mais seguro e funciona perfeitamente em terminais
-        Console console = System.console();
-        if (console != null) {
-            char[] passwordArray = console.readPassword();
-            return new String(passwordArray).trim();
-        }
-        
-        // Fallback para IDEs e ambientes onde System.console() retorna null
-        // Lê caractere por caractere usando System.in diretamente
-        StringBuilder senha = new StringBuilder();
-        try {
-            // Configura o terminal para modo raw (se possível)
-            String os = System.getProperty("os.name").toLowerCase();
-            boolean isWindows = os.contains("win");
-            
-            int caractere;
-            System.out.flush(); // Garante que o prompt foi exibido
-            
-            while (true) {
-                caractere = System.in.read();
-                
-                if (caractere == '\n' || caractere == '\r') {
-                    break; 
-                } else if (caractere == 8 || caractere == 127 || (isWindows && caractere == 224 && System.in.read() == 75)) {
-                    if (senha.length() > 0) {
-                        senha.deleteCharAt(senha.length() - 1);
-                        System.out.print("\b \b"); 
-                        System.out.flush();
-                    }
-                } else if (caractere >= 32 && caractere < 127) {
-                    senha.append((char) caractere);
-                    System.out.print('*');
-                    System.out.flush();
-                }
-            }
-            System.out.println();
-        } catch (IOException e) {
-            System.out.println();
-            System.out.println("(Aviso: não foi possível ocultar a senha - usando modo normal)");
-            return scanner.nextLine().trim();
-        }
-        
-        return senha.toString().trim();
-    }
-
-    /**
-     * Gera automaticamente o relatório consolidado da empresa antes de sair do programa
-     * Este relatório agrega dados de todos os investidores da plataforma
-     * O relatório é salvo apenas em arquivo, sem exibição no terminal
-     */
-    private void gerarRelatorioEmpresaAntesSair() {
-        try {
-            // Gera relatório consolidado da empresa (todos os investidores)
-            com.invest.dto.RelatorioEmpresaResponse relatorio = 
-                relatorioEmpresaService.gerarRelatorioEmpresa();
-            
-            // Converte para JSON usando ObjectMapper do Spring Boot (já configurado com JavaTimeModule)
-            // Cria uma cópia com indentação habilitada
-            com.fasterxml.jackson.databind.ObjectMapper mapper = objectMapper.copy();
-            mapper.enable(com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT);
-            
-            String json = mapper.writeValueAsString(relatorio);
-            
-            // Cria pasta para relatórios se não existir
-            Path pastaRelatorios = Paths.get("relatorios_empresa");
-            
-            try {
-                Files.createDirectories(pastaRelatorios);
-            } catch (IOException e) {
-                // Erro silencioso - não exibe nada no terminal
-            }
-            
-            // Salva o JSON em arquivo dentro da pasta
-            String nomeArquivo = "relatorio_empresa_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".json";
-            Path caminhoArquivo = pastaRelatorios.resolve(nomeArquivo);
-            
-            try (FileWriter writer = new FileWriter(caminhoArquivo.toFile(), StandardCharsets.UTF_8)) {
-                writer.write(json);
-            } catch (IOException e) {
-                // Erro silencioso - não exibe nada no terminal
-            }
-            
-        } catch (Exception e) {
-            // Erro silencioso - não exibe nada no terminal
-        }
     }
 }
